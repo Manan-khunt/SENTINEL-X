@@ -95,8 +95,15 @@ def test_audit_chain_detects_modification(db):
     append_event(db, "INC-a", "agent", "plan.created", {"x": 1})
     append_event(db, "INC-a", "agent", "action.executed", {"x": 2})
     assert verify_chain(db)["status"] == "INTACT"
+    from sqlalchemy import text as _text
+
     from app.db.tables import AuditLog
 
+    # Simulate an attacker with raw DB-file access: triggers block plain
+    # UPDATE/DELETE via SQL, so bypass them to test hash-chain detection.
+    db.execute(_text("DROP TRIGGER IF EXISTS audit_log_no_update"))
+    db.execute(_text("DROP TRIGGER IF EXISTS audit_log_no_delete"))
+    db.commit()
     row = db.query(AuditLog).order_by(AuditLog.id).first()
     row.payload_json = {"tampered": True}
     db.commit()

@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, IS_DEMO_MODE } from './client';
 import type { Incident, GraphNode, GraphEdge, AttackPath, AgentStep } from '../types';
 import { SCENARIO_DATASETS } from '../demo/allScenariosData';
 
@@ -135,46 +135,61 @@ export const incidentsApi = {
   getIncidents: async (): Promise<Incident[]> => {
     try {
       return await apiClient<Incident[]>('/incidents');
-    } catch {
-      return DEMO_INCIDENT_LIST;
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return DEMO_INCIDENT_LIST;
+      }
+      throw err;
     }
   },
 
   getIncidentById: async (id: string): Promise<Incident> => {
     try {
       return await apiClient<Incident>(`/incidents/${id}`);
-    } catch {
-      const match = DEMO_INCIDENT_LIST.find((i) => i.id === id);
-      if (match) return match;
-      return DEMO_INCIDENT_LIST[0];
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        const match = DEMO_INCIDENT_LIST.find((i) => i.id === id);
+        if (match) return match;
+        return DEMO_INCIDENT_LIST[0];
+      }
+      throw err;
     }
   },
 
   getIncidentGraph: async (id: string): Promise<{ nodes: GraphNode[]; edges: GraphEdge[] }> => {
     try {
       return await apiClient<{ nodes: GraphNode[]; edges: GraphEdge[] }>(`/incidents/${id}/graph`);
-    } catch {
-      const inc = DEMO_INCIDENT_LIST.find((i) => i.id === id) || DEMO_INCIDENT_LIST[0];
-      return { nodes: inc.nodes, edges: inc.edges };
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        const inc = DEMO_INCIDENT_LIST.find((i) => i.id === id) || DEMO_INCIDENT_LIST[0];
+        return { nodes: inc.nodes, edges: inc.edges };
+      }
+      throw err;
     }
   },
 
   getIncidentTimeline: async (id: string): Promise<AgentStep[]> => {
     try {
       return await apiClient<AgentStep[]>(`/incidents/${id}/timeline`);
-    } catch {
-      const inc = DEMO_INCIDENT_LIST.find((i) => i.id === id) || DEMO_INCIDENT_LIST[0];
-      const dataset = SCENARIO_DATASETS[inc.scenarioId];
-      return dataset.steps;
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        const inc = DEMO_INCIDENT_LIST.find((i) => i.id === id) || DEMO_INCIDENT_LIST[0];
+        const dataset = SCENARIO_DATASETS[inc.scenarioId];
+        return dataset.steps;
+      }
+      throw err;
     }
   },
 
   getIncidentPaths: async (id: string): Promise<AttackPath[]> => {
     try {
       return await apiClient<AttackPath[]>(`/incidents/${id}/paths`);
-    } catch {
-      const inc = DEMO_INCIDENT_LIST.find((i) => i.id === id) || DEMO_INCIDENT_LIST[0];
-      return inc.activePaths;
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        const inc = DEMO_INCIDENT_LIST.find((i) => i.id === id) || DEMO_INCIDENT_LIST[0];
+        return inc.activePaths;
+      }
+      throw err;
     }
   },
 };

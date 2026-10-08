@@ -7,6 +7,9 @@ from abc import ABC, abstractmethod
 
 class LLMAdapter(ABC):
     temperature: float = 0
+    # Measured accounting for the most recent plan() call. Each adapter sets
+    # this from its actual output so the benchmark measures real usage.
+    tokens_used_last_plan: int = 0
 
     @abstractmethod
     def plan(self, structured_state: dict) -> dict:

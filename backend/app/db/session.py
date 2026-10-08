@@ -47,9 +47,28 @@ def get_session_factory():
 
 
 def init_db() -> None:
+    from sqlalchemy import text as _text
+
     from app.db import tables as _t  # noqa: F401
 
     Base.metadata.create_all(bind=get_engine())
+    # Insert-only triggers must exist even on pre-existing DB files where
+    # create_all skips table creation (DDL after_create would not fire).
+    with get_engine().begin() as conn:
+        conn.execute(
+            _text(
+                "CREATE TRIGGER IF NOT EXISTS audit_log_no_update "
+                "BEFORE UPDATE ON audit_log BEGIN "
+                "SELECT RAISE(ABORT, 'audit_log is insert-only: UPDATE blocked'); END"
+            )
+        )
+        conn.execute(
+            _text(
+                "CREATE TRIGGER IF NOT EXISTS audit_log_no_delete "
+                "BEFORE DELETE ON audit_log BEGIN "
+                "SELECT RAISE(ABORT, 'audit_log is insert-only: DELETE blocked'); END"
+            )
+        )
 
 
 def get_db():

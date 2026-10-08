@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, IS_DEMO_MODE } from './client';
 import type { SSEEventPayload } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
@@ -15,11 +15,14 @@ export const streamApi = {
         method: 'POST',
         body: JSON.stringify({ incidentId }),
       });
-    } catch {
-      return {
-        ticket: 'demo_ticket_' + Math.random().toString(36).substring(2),
-        expiresInSeconds: 3600,
-      };
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return {
+          ticket: 'demo_ticket_' + Math.random().toString(36).substring(2),
+          expiresInSeconds: 3600,
+        };
+      }
+      throw err;
     }
   },
 

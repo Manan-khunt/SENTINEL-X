@@ -7,15 +7,15 @@ OBSERVE -> REASON -> PLAN -> DRY-RUN -> RISK -> POLICY -> TOOL CALL
 from __future__ import annotations
 
 import copy
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.agent.fallback import fallback_plan
+from app.agent.fallback import fallback_plan, static_playbook_plan
 from app.agent.planner import validate_plan
 from app.config import get_settings
 from app.core import events
-from app.core.audit import append_event
+from app.core.audit import anchor_current_head, append_event
 from app.core.gateway import GatewayError
 from app.core.gateway import execute as gateway_execute
 from app.core.graph_engine import (
@@ -26,16 +26,36 @@ from app.core.graph_engine import (
 )
 from app.core.sanitizer import sanitize_telemetry
 from app.core.verifier import verify_containment
-from app.db.tables import AgentStep, GraphSnapshot, Incident
+from app.db.tables import Action, AgentStep, Approval, GraphSnapshot, Incident
 from app.db.tables import Plan as PlanRow
 from app.env.adversary import adversary_step
-from app.env.environment import initial_state
+from app.env.environment import apply_agent_effect, initial_state
 from app.llm.adapter import LLMAdapter
 from app.tools.respond import simulate_action
 
 SYSTEM_STATE = {"status": "RUNNING"}  # RUNNING | HALTED (kill switch)
 
-_incident_counter = {"n": 1042}
+_incident_counter = {"n": 1042, "synced": False}
+
+
+def _next_incident_id(db: Session) -> str:
+    """Monotonic INC ids that resume past any rows already in the database."""
+    if not _incident_counter["synced"]:
+        highest = 1042
+        for (existing,) in db.query(Incident.id).filter(Incident.id.like("INC-%")).all():
+            try:
+                highest = max(highest, int(existing.split("-", 1)[1]))
+            except (ValueError, IndexError):
+                continue
+        _incident_counter["n"] = highest
+        _incident_counter["synced"] = True
+    _incident_counter["n"] += 1
+    return f"INC-{_incident_counter['n']}"
+
+
+def _replan_allowed(configuration: str) -> bool:
+    """Single mapping point: B2 is the B3 code path with replanning disabled."""
+    return configuration != "B2"
 
 
 def get_adapter() -> LLMAdapter:
@@ -69,18 +89,26 @@ def _structured_state(incident: Incident, state: dict, paths: list) -> dict:
         "replans": incident.replans,
         "workstation_isolated": "workstation_17" in state.get("isolated", []),
         "isolated_hint": list(state.get("isolated", [])),
+        "disabled_credentials": list(state.get("disabled_credentials", [])),
     }
 
 
 def create_incident(
-    db: Session, scenario_id: str, seed: int, mode: str, configuration: str, actor: str
+    db: Session,
+    scenario_id: str,
+    seed: int,
+    mode: str,
+    configuration: str,
+    actor: str,
+    allow_replan: bool | None = None,
 ) -> Incident:
     if SYSTEM_STATE["status"] == "HALTED":
         raise GatewayError("system halted by kill switch")
-    _incident_counter["n"] += 1
-    inc_id = f"INC-{_incident_counter['n']}"
+    if SYSTEM_STATE["status"] == "HALTED":
+        raise GatewayError("system halted by kill switch")
+    inc_id = _next_incident_id(db)
     state = initial_state(scenario_id, seed)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     inc = Incident(
         id=inc_id,
         scenario_id=scenario_id,
@@ -108,8 +136,16 @@ def create_incident(
     )
     events.publish(inc_id, "incident.started", {"scenario": scenario_id, "seed": seed})
     _snapshot(db, inc)
+    if allow_replan is None:
+        allow_replan = _replan_allowed(configuration)
     # Scenario 7 (benign): investigate once, do not loop aggressively
-    run_loop(db, inc_id, actor, max_cycles=6 if scenario_id != "scenario_7" else 1)
+    run_loop(
+        db,
+        inc_id,
+        actor,
+        max_cycles=6 if scenario_id != "scenario_7" else 1,
+        allow_replan=allow_replan,
+    )
     db.refresh(inc)
     return inc
 
@@ -132,7 +168,9 @@ def _record_step(db: Session, inc_id: str, step_no: int, phase: str, payload: di
     db.commit()
 
 
-def run_loop(db: Session, incident_id: str, actor: str, max_cycles: int = 6) -> Incident:
+def run_loop(
+    db: Session, incident_id: str, actor: str, max_cycles: int = 6, allow_replan: bool = True
+) -> Incident:
     for _ in range(max_cycles):
         inc = db.query(Incident).filter_by(id=incident_id).first()
         if not inc or inc.status in (
@@ -143,18 +181,19 @@ def run_loop(db: Session, incident_id: str, actor: str, max_cycles: int = 6) -> 
             "AWAITING_APPROVAL",
         ):
             break
-        done = agent_cycle(db, inc, actor)
+        done = agent_cycle(db, inc, actor, allow_replan=allow_replan)
         if done in ("pause", "done", "escalated"):
             break
     return db.query(Incident).filter_by(id=incident_id).first()
 
 
-def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
+def agent_cycle(db: Session, inc: Incident, actor: str, allow_replan: bool = True) -> str:
     """One OBSERVE..VERIFY cycle. Returns done|replan|pause|escalated."""
     settings = get_settings()
     if SYSTEM_STATE["status"] == "HALTED":
         inc.status = "HALTED"
         db.commit()
+        anchor_current_head(db)
         return "escalated"
     state: dict = copy.deepcopy(inc.env_state_json)
     step = inc.simulation_step
@@ -171,9 +210,8 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
         db.commit()
         return "replan"
 
-    # B1 static playbook: always isolate workstation_17 once
-    # B2: no replanning (single action then stop)
-    # B3: full loop
+    # B1: strong static SOAR playbook (no LLM); B2/B3 share the agent path,
+    # differing only by the allow_replan flag (B2 = single attempt, no replan).
 
     # Sanitizer over telemetry (REASON context)
     _, flags = sanitize_telemetry(state.get("telemetry", []))
@@ -183,27 +221,39 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
     sstate = _structured_state(inc, state, paths_before)
 
     # REASON+PLAN via LLM (no env access; structured state only)
+    tokens_for_step = 0
     adapter = get_adapter()
     raw = None
     plan = None
     err = ""
     first_pass_valid = True
-    for attempt in range(3):  # initial + max 2 retries
-        try:
-            raw = adapter.plan(sstate)
-        except Exception as e:  # LLM unavailable -> fallback
-            raw = fallback_plan(sstate)
-            append_event(db, inc.id, actor, "plan.fallback", {"reason": str(e)})
-            break
+    if inc.configuration == "B1":
+        raw = static_playbook_plan(sstate, state)
         plan, err = validate_plan(raw)
-        if plan is not None:
-            break
-        first_pass_valid = False if attempt == 0 else first_pass_valid
-        append_event(db, inc.id, actor, "plan.invalid", {"attempt": attempt, "error": err})
-        if attempt >= 2:
+        first_pass_valid = plan is not None
+        if plan is None:
+            append_event(db, inc.id, actor, "plan.invalid", {"attempt": 0, "error": err})
             raw = fallback_plan(sstate)
             plan, err = validate_plan(raw)
+    else:
+        for attempt in range(3):  # initial + max 2 retries
+            try:
+                raw = adapter.plan(sstate)
+            except Exception as e:  # LLM unavailable -> fallback
+                raw = fallback_plan(sstate)
+                append_event(db, inc.id, actor, "plan.fallback", {"reason": str(e)})
+                break
+            tokens_for_step = adapter.tokens_used_last_plan
+            plan, err = validate_plan(raw)
+            if plan is not None:
+                break
+            first_pass_valid = False if attempt == 0 else first_pass_valid
+            append_event(db, inc.id, actor, "plan.invalid", {"attempt": attempt, "error": err})
+            if attempt >= 2:
+                raw = fallback_plan(sstate)
+                plan, err = validate_plan(raw)
     assert plan is not None
+    _record_step(db, inc.id, step, "PLAN", {"objective": plan.objective, "tokens": tokens_for_step})
     db.add(
         PlanRow(
             incident_id=inc.id,
@@ -224,12 +274,15 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
             "objective": plan.objective,
             "actions": [a.model_dump() for a in plan.actions],
             "first_pass_valid": first_pass_valid,
+            "tokens": tokens_for_step,
         },
     )
     events.publish(inc.id, "plan.created", {"objective": plan.objective})
 
-    # Scenario 7 benign: read-only investigate, never disrupt
-    if inc.scenario_id == "scenario_7":
+    # Scenario 7 benign with a reasoning agent (B2/B3): read-only investigate,
+    # never disrupt. B0 does nothing; B1 runs its static playbook blindly, so
+    # any disruption it causes is measured as over-containment.
+    if inc.scenario_id == "scenario_7" and inc.configuration not in ("B0", "B1"):
         for a in plan.actions:
             gateway_execute(
                 db,
@@ -245,7 +298,7 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
             )
         inc.env_state_json = state
         inc.simulation_step += 1
-        inc.updated_at = datetime.utcnow()
+        inc.updated_at = datetime.now(timezone.utc)
         append_event(
             db,
             inc.id,
@@ -256,6 +309,7 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
         events.publish(inc.id, "verification.completed", {"verdict": "BENIGN_INVESTIGATED"})
         inc.status = "CONTAINED"
         db.commit()
+        anchor_current_head(db)
         events.publish(inc.id, "incident.contained", {})
         return "done"
 
@@ -305,7 +359,7 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
     inc.env_state_json = state
     inc.simulation_step += 1
     inc.graph_version += 1
-    inc.updated_at = datetime.utcnow()
+    inc.updated_at = datetime.now(timezone.utc)
 
     diff = graph_diff(old_state, state)
     append_event(db, inc.id, "graph", "graph.diff", diff)
@@ -340,6 +394,7 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
         inc.status = "CONTAINED"
         inc.threat_state = "CONTAINED"
         db.commit()
+        anchor_current_head(db)
         events.publish(inc.id, "incident.contained", {})
         return "done"
 
@@ -352,13 +407,15 @@ def agent_cycle(db: Session, inc: Incident, actor: str) -> str:
         inc.status = "ESCALATED"
         db.commit()
         append_event(db, inc.id, actor, "incident.escalated", {"reason": "no progress 3 cycles"})
+        anchor_current_head(db)
         return "escalated"
-    if inc.configuration == "B2":
+    if not allow_replan:
         db.commit()
-        return "done"  # B2: no replanning
+        return "done"  # B2: single attempt, no replanning
     if inc.replans > settings.MAX_REPLANS:
         inc.status = "FAILED"
         db.commit()
+        anchor_current_head(db)
         events.publish(inc.id, "incident.failed", {})
         return "escalated"
     if not replanned_for_new_path:
@@ -376,4 +433,53 @@ def resume_after_approval(db: Session, incident_id: str, actor: str) -> Incident
         return inc
     inc.status = "RUNNING"
     db.commit()
-    return run_loop(db, incident_id, actor, max_cycles=6)
+    return run_loop(
+        db, incident_id, actor, max_cycles=6, allow_replan=_replan_allowed(inc.configuration)
+    )
+
+
+def decide_approval(db: Session, action_id: str, approve: bool, actor: str) -> dict:
+    """Headless approve/deny used by the API endpoints and the benchmark.
+
+    Same code path as the HTTP routes: records the decision, applies or
+    skips the tool effect, then resumes the agent loop.
+    """
+    a = db.query(Action).filter_by(id=action_id).first()
+    if not a:
+        raise GatewayError("action not found")
+    ap = db.query(Approval).filter_by(action_id=action_id).order_by(Approval.id.desc()).first()
+    if not ap or ap.status != "pending":
+        raise GatewayError("no pending approval")
+    inc = db.query(Incident).filter_by(id=a.incident_id).first()
+    if approve:
+        ap.status = "approved"
+        ap.decided_by = actor
+        ap.decided_at = datetime.now(timezone.utc)
+        a.approval_status = "approved"
+        # execute now through gateway effect directly (already risk/policy checked)
+        apply_agent_effect(inc.env_state_json, a.tool, a.target)
+        a.result = "SUCCESS"
+        db.commit()
+        append_event(db, a.incident_id, actor, "action.approved", {"action": action_id})
+        events.publish(a.incident_id, "action.approved", {"action": action_id})
+        append_event(
+            db,
+            a.incident_id,
+            actor,
+            "action.executed",
+            {"action": action_id, "tool": a.tool, "after_approval": True},
+        )
+        events.publish(a.incident_id, "action.executed", {"action": action_id})
+    else:
+        ap.status = "denied"
+        ap.decided_by = actor
+        ap.decided_at = datetime.now(timezone.utc)
+        a.approval_status = "denied"
+        a.result = "DENIED"
+        db.commit()
+        append_event(
+            db, a.incident_id, actor, "action.denied", {"action": action_id, "tool": a.tool}
+        )
+        events.publish(a.incident_id, "action.denied", {"action": action_id})
+    resume_after_approval(db, a.incident_id, actor)
+    return {"status": "approved" if approve else "denied", "action": action_id}

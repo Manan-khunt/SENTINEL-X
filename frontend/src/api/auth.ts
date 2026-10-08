@@ -1,40 +1,68 @@
 import { apiClient } from './client';
-import type { User } from '../types';
+import { setInMemoryAccessToken } from '../stores/authStore';
+import type { Role, User } from '../types';
 
 export interface LoginResponse {
   token: string;
   user: User;
 }
 
+interface ServerTokenResponse {
+  access_token: string;
+  token_type: string;
+}
+
+interface ServerUserResponse {
+  id: number;
+  username: string;
+  role: Role;
+}
+
 export const authApi = {
   login: async (username: string, password?: string): Promise<LoginResponse> => {
     try {
-      return await apiClient<LoginResponse>('/auth/login', {
+      // 1. Authenticate with backend /api/auth/login
+      const tokenRes = await apiClient<ServerTokenResponse>('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password: password || '' }),
       });
-    } catch {
-      // Synthetic fallback for demo environment
+
+      // 2. Temporarily set access token so subsequent /me request has Bearer header
+      setInMemoryAccessToken(tokenRes.access_token);
+
+      // 3. Obtain verified user profile and role from server
+      const meRes = await apiClient<ServerUserResponse>('/me');
+
       return {
-        token: 'mem_tok_' + Math.random().toString(36).substring(2),
+        token: tokenRes.access_token,
         user: {
-          username,
-          displayName: username.toUpperCase(),
-          role: username.toLowerCase().includes('admin') ? 'admin' : 'analyst',
+          username: meRes.username,
+          displayName: meRes.username.toUpperCase(),
+          role: meRes.role,
         },
       };
+    } catch (err: any) {
+      // No synthetic login fallback - role always comes from server response
+      setInMemoryAccessToken(null);
+      throw err;
     }
   },
 
   getCurrentUser: async (): Promise<User> => {
-    return apiClient<User>('/auth/me');
+    const meRes = await apiClient<ServerUserResponse>('/me');
+    return {
+      username: meRes.username,
+      displayName: meRes.username.toUpperCase(),
+      role: meRes.role,
+    };
   },
 
   logout: async (): Promise<void> => {
+    setInMemoryAccessToken(null);
     try {
       await apiClient('/auth/logout', { method: 'POST' });
     } catch {
-      // Ignored in demo mode
+      // Ignore
     }
   },
 };

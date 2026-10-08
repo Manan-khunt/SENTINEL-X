@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Shield, Radio, ShieldOff, AlertOctagon, UserCheck, ChevronDown, Check } from 'lucide-react';
+import { Shield, Radio, ShieldOff, AlertOctagon, UserCheck, ChevronDown, Check, Activity } from 'lucide-react';
 import { useIncidentStore } from '../../stores/incidentStore';
 import { useAuthStore } from '../../stores/authStore';
 import { KillSwitchModal } from '../common/KillSwitchModal';
 import { SCENARIOS } from '../../demo/scenarios';
+import { IS_DEMO_MODE } from '../../api/client';
 import type { Role, OperatingMode } from '../../types';
 
 export const TopBar: React.FC = () => {
@@ -33,6 +34,22 @@ export const TopBar: React.FC = () => {
 
   return (
     <>
+      {/* Persistent DEMO DATA banner when demo mode is active */}
+      {IS_DEMO_MODE && (
+        <div className="w-full bg-[#F59E0B] text-black px-4 py-1 flex items-center justify-between text-xs font-mono font-bold tracking-wider shrink-0 z-40">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 shrink-0" />
+            <span>DEMO DATA MODE ACTIVE — ALL DATA IS SYNTHETIC / NOT CONNECTED TO LIVE BACKEND</span>
+          </div>
+          <button
+            onClick={() => {}}
+            className="px-2 py-0.5 bg-black/20 rounded text-black text-[11px] uppercase"
+          >
+            Set VITE_DEMO_MODE=false in .env to connect to real backend
+          </button>
+        </div>
+      )}
+
       <header className="h-14 bg-[#111A2E] border-b border-[#22304D] px-4 flex items-center justify-between shrink-0 select-none z-30">
         {/* Left: Brand & Hackathon info */}
         <div className="flex items-center gap-3">

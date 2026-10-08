@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from app.llm.adapter import LLMAdapter
 
 
@@ -9,6 +11,12 @@ class MockAdapter(LLMAdapter):
     temperature = 0
 
     def plan(self, s: dict) -> dict:
+        plan = self._plan(s)
+        # Simulated token accounting derived from the actual output size.
+        self.tokens_used_last_plan = max(1, len(json.dumps(plan, sort_keys=True)) // 4)
+        return plan
+
+    def _plan(self, s: dict) -> dict:
         scenario = s.get("scenario_id", "scenario_2")
         paths: list[list[str]] = s.get("active_paths_detail", [])
         flat = [n for p in paths for n in p]
@@ -28,7 +36,10 @@ class MockAdapter(LLMAdapter):
                 "verification_required": True,
                 "confidence": 80,
             }
-        if scenario == "scenario_4":
+        if scenario == "scenario_4" and "admin_root" not in s.get("disabled_credentials", []):
+            # Propose the HIGH action once; after it is applied (or while it is
+            # pending) fall through to path-based planning instead of repeating
+            # an already-applied effect.
             return {
                 "objective": "Contain via admin credential disable (high-risk, needs approval)",
                 "actions": [

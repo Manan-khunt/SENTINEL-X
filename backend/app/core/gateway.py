@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -112,7 +112,7 @@ def execute(
         approval_status="not_required",
         result="PENDING",
         idempotency_key=idempotency_key or action_id,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
     )
     db.add(action)
     db.commit()

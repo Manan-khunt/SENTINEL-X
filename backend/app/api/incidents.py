@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.agent.orchestrator import create_incident, resume_after_approval, run_loop
+from app.agent.orchestrator import create_incident, decide_approval, run_loop
 from app.api.auth import current_user, require_min_role
 from app.core import events
 from app.core.audit import append_event
@@ -24,7 +22,7 @@ from app.core.models import (
 )
 from app.core.verifier import verify_containment
 from app.db.session import get_db
-from app.db.tables import Action, AgentStep, Approval, AuditLog, Incident, User
+from app.db.tables import Action, AgentStep, AuditLog, Incident, User
 from app.env.environment import apply_agent_effect
 
 router = APIRouter()
@@ -197,33 +195,11 @@ def approve(
     db: Session = Depends(get_db),
     user: User = Depends(require_min_role("approver")),
 ):
-    a = db.query(Action).filter_by(id=action_id).first()
-    if not a:
-        raise HTTPException(status_code=404, detail="not found")
-    ap = db.query(Approval).filter_by(action_id=action_id).order_by(Approval.id.desc()).first()
-    if not ap or ap.status != "pending":
-        raise HTTPException(status_code=400, detail="no pending approval")
-    inc = db.query(Incident).filter_by(id=a.incident_id).first()
-    ap.status = "approved"
-    ap.decided_by = user.username
-    ap.decided_at = datetime.utcnow()
-    a.approval_status = "approved"
-    # execute now through gateway effect directly (already risk/policy checked)
-    apply_agent_effect(inc.env_state_json, a.tool, a.target)
-    a.result = "SUCCESS"
-    db.commit()
-    append_event(db, a.incident_id, user.username, "action.approved", {"action": action_id})
-    events.publish(a.incident_id, "action.approved", {"action": action_id})
-    append_event(
-        db,
-        a.incident_id,
-        user.username,
-        "action.executed",
-        {"action": action_id, "tool": a.tool, "after_approval": True},
-    )
-    events.publish(a.incident_id, "action.executed", {"action": action_id})
-    resume_after_approval(db, a.incident_id, user.username)
-    return {"status": "approved", "action": action_id}
+    try:
+        return decide_approval(db, action_id, True, user.username)
+    except GatewayError as e:
+        msg = str(e)
+        raise HTTPException(status_code=404 if "not found" in msg else 400, detail=msg) from e
 
 
 @router.post("/actions/{action_id}/deny")
@@ -232,24 +208,11 @@ def deny(
     db: Session = Depends(get_db),
     user: User = Depends(require_min_role("approver")),
 ):
-    a = db.query(Action).filter_by(id=action_id).first()
-    if not a:
-        raise HTTPException(status_code=404, detail="not found")
-    ap = db.query(Approval).filter_by(action_id=action_id).order_by(Approval.id.desc()).first()
-    if not ap or ap.status != "pending":
-        raise HTTPException(status_code=400, detail="no pending approval")
-    ap.status = "denied"
-    ap.decided_by = user.username
-    ap.decided_at = datetime.utcnow()
-    a.approval_status = "denied"
-    a.result = "DENIED"
-    db.commit()
-    append_event(
-        db, a.incident_id, user.username, "action.denied", {"action": action_id, "tool": a.tool}
-    )
-    events.publish(a.incident_id, "action.denied", {"action": action_id})
-    resume_after_approval(db, a.incident_id, user.username)
-    return {"status": "denied", "action": action_id}
+    try:
+        return decide_approval(db, action_id, False, user.username)
+    except GatewayError as e:
+        msg = str(e)
+        raise HTTPException(status_code=404 if "not found" in msg else 400, detail=msg) from e
 
 
 @router.post("/actions/{action_id}/undo")

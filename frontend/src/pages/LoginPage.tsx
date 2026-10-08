@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Server, CheckCircle2, AlertCircle, ArrowRight, Lock } from 'lucide-react';
+import { Shield, Server, CheckCircle2, AlertCircle, ArrowRight, Lock, KeyRound } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 
 export const LoginPage: React.FC = () => {
-  const [username, setUsername] = useState('analyst_404');
-  const [password, setPassword] = useState('••••••••••••');
+  const [username, setUsername] = useState('analyst');
+  const [password, setPassword] = useState('analyst123');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -27,7 +27,7 @@ export const LoginPage: React.FC = () => {
       // Strictly in memory! Navigates to dashboard
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed at Gateway.');
+      setError(err?.message || 'Authentication failed: invalid credentials or gateway offline.');
     } finally {
       setIsSubmitting(false);
     }
@@ -72,7 +72,7 @@ export const LoginPage: React.FC = () => {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="analyst_404"
+                placeholder="analyst"
                 className="w-full bg-[#0B1220] border border-[#22304D] focus:border-[#0E7C86] rounded px-3 py-2 text-[#E6EDF7] outline-hidden transition-colors"
                 required
               />
@@ -88,7 +88,7 @@ export const LoginPage: React.FC = () => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder="analyst123"
                 className="w-full bg-[#0B1220] border border-[#22304D] focus:border-[#0E7C86] rounded px-3 py-2 text-[#E6EDF7] outline-hidden transition-colors"
                 required
               />
@@ -112,8 +112,21 @@ export const LoginPage: React.FC = () => {
           </button>
         </form>
 
+        {/* Seeded Operator Hint */}
+        <div className="p-2 bg-[#0B1220] border border-[#22304D] rounded text-[10px] font-mono text-[#8FA0BF] space-y-1">
+          <div className="flex items-center gap-1.5 text-[#0E7C86] font-bold">
+            <KeyRound className="w-3 h-3" />
+            <span>SEEDED SOC ACCOUNTS</span>
+          </div>
+          <div className="text-[9px] text-[#8FA0BF]/80 flex justify-between">
+            <span>analyst : analyst123</span>
+            <span>admin : admin123</span>
+            <span>approver : approver123</span>
+          </div>
+        </div>
+
         {/* SOC System Status Info */}
-        <div className="pt-4 border-t border-[#22304D] space-y-2 text-[11px] font-mono text-[#8FA0BF]">
+        <div className="pt-3 border-t border-[#22304D] space-y-2 text-[11px] font-mono text-[#8FA0BF]">
           <div className="flex items-center justify-between">
             <span>Environment:</span>
             <span className="text-[#E6EDF7] font-semibold">Synthetic Enterprise</span>

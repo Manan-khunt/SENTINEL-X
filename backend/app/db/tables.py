@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import DDL, JSON, Boolean, DateTime, Float, Integer, String, Text, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -51,8 +55,8 @@ class Incident(Base):
     env_state_json: Mapped[dict] = mapped_column(JSON, default=dict)
     threat_state: Mapped[str] = mapped_column(String(16), default="ACTIVE")
     no_progress_cycles: Mapped[int] = mapped_column(Integer, default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class GraphSnapshot(Base):
@@ -62,7 +66,7 @@ class GraphSnapshot(Base):
     version: Mapped[int] = mapped_column(Integer)
     nodes_json: Mapped[dict] = mapped_column(JSON, default=dict)
     edges_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class AgentStep(Base):
@@ -72,7 +76,7 @@ class AgentStep(Base):
     step_no: Mapped[int] = mapped_column(Integer)
     phase: Mapped[str] = mapped_column(String(48))
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class Plan(Base):
@@ -84,7 +88,7 @@ class Plan(Base):
     expected_effect: Mapped[str] = mapped_column(Text, default="")
     verification_required: Mapped[bool] = mapped_column(Boolean, default=True)
     valid: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class Action(Base):
@@ -104,7 +108,7 @@ class Action(Base):
     undo_of: Mapped[str | None] = mapped_column(String(32), default=None)
     undone: Mapped[bool] = mapped_column(Boolean, default=False)
     idempotency_key: Mapped[str] = mapped_column(String(128), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class Approval(Base):
@@ -115,7 +119,7 @@ class Approval(Base):
     status: Mapped[str] = mapped_column(String(24), default="pending")
     decided_by: Mapped[str | None] = mapped_column(String(64), default=None)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class AuditLog(Base):
@@ -127,14 +131,14 @@ class AuditLog(Base):
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     previous_hash: Mapped[str] = mapped_column(String(128), default="GENESIS")
     hash: Mapped[str] = mapped_column(String(128), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class BenchmarkBatch(Base):
     __tablename__ = "benchmark_batches"
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     status: Mapped[str] = mapped_column(String(24), default="RUNNING")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class BenchmarkRun(Base):
@@ -145,9 +149,11 @@ class BenchmarkRun(Base):
     seed: Mapped[int] = mapped_column(Integer)
     configuration: Mapped[str] = mapped_column(String(8))
     contained: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(24), default="")
     steps: Mapped[int] = mapped_column(Integer, default=0)
     replans: Mapped[int] = mapped_column(Integer, default=0)
     unsafe_actions: Mapped[int] = mapped_column(Integer, default=0)
+    high_no_approval: Mapped[int] = mapped_column(Integer, default=0)
     injection_success: Mapped[bool] = mapped_column(Boolean, default=False)
     over_containment: Mapped[bool] = mapped_column(Boolean, default=False)
     verification_correct: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -169,3 +175,25 @@ class SSETicket(Base):
     ticket: Mapped[str] = mapped_column(String(128), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+# Insert-only protection: reject UPDATE/DELETE on audit_log at the DB layer.
+# Installed via DDL so every `create_all` (prod + test DBs) gets it.
+event.listen(
+    AuditLog.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER IF NOT EXISTS audit_log_no_update "
+        "BEFORE UPDATE ON audit_log BEGIN "
+        "SELECT RAISE(ABORT, 'audit_log is insert-only: UPDATE blocked'); END"
+    ),
+)
+event.listen(
+    AuditLog.__table__,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER IF NOT EXISTS audit_log_no_delete "
+        "BEFORE DELETE ON audit_log BEGIN "
+        "SELECT RAISE(ABORT, 'audit_log is insert-only: DELETE blocked'); END"
+    ),
+)

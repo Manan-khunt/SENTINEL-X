@@ -1,7 +1,7 @@
 import { getAccessToken } from '../stores/authStore';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
-const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true' || true;
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+export const IS_DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
 
 export interface ApiError {
   status: number;
@@ -35,10 +35,13 @@ export async function apiClient<T>(
 
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({}));
+      const detailMsg = typeof errorData.detail === 'string' 
+        ? errorData.detail 
+        : errorData.message || `Request failed (${res.status})`;
       const err: ApiError = {
         status: res.status,
-        message: errorData.message || `API Request failed with status ${res.status}`,
-        code: errorData.code || 'HTTP_ERROR',
+        message: detailMsg,
+        code: errorData.code || `HTTP_${res.status}`,
         details: errorData,
       };
       throw err;
@@ -46,15 +49,22 @@ export async function apiClient<T>(
 
     return (await res.json()) as T;
   } catch (error: any) {
-    // If backend is not running and demo mode is permitted, we don't throw raw crash
-    if (IS_DEMO_MODE && (error.name === 'TypeError' || error.status === 404 || error.status === 502)) {
-      // Handled cleanly by caller/mock layer
+    if (error.status && error.message) {
+      throw error;
+    }
+    // Network / connection failure
+    if (IS_DEMO_MODE) {
       throw {
         status: 503,
         message: 'Backend server not detected. Operating in synthetic demo mode.',
         code: 'DEMO_FALLBACK',
       };
     }
-    throw error;
+    throw {
+      status: 0,
+      message: 'Failed to connect to backend server at ' + url,
+      code: 'NETWORK_ERROR',
+      details: error,
+    };
   }
 }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
@@ -25,7 +25,7 @@ def verify_pw(pw: str, h: str) -> bool:
 
 def make_token(username: str, role: str) -> str:
     s = get_settings()
-    exp = datetime.utcnow() + timedelta(seconds=s.JWT_EXPIRY)
+    exp = datetime.now(timezone.utc) + timedelta(seconds=s.JWT_EXPIRY)
     return jwt.encode({"sub": username, "role": role, "exp": exp}, s.JWT_SECRET, algorithm="HS256")
 
 

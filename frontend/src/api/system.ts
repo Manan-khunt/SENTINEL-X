@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { apiClient, IS_DEMO_MODE } from './client';
 import type { SystemComponentStatus } from '../types';
 
 export const SYSTEM_COMPONENTS_INITIAL: SystemComponentStatus[] = [
@@ -98,8 +98,11 @@ export const systemApi = {
   getSystemStatus: async (): Promise<SystemComponentStatus[]> => {
     try {
       return await apiClient<SystemComponentStatus[]>('/system/status');
-    } catch {
-      return SYSTEM_COMPONENTS_INITIAL;
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return SYSTEM_COMPONENTS_INITIAL;
+      }
+      throw err;
     }
   },
 
@@ -108,11 +111,14 @@ export const systemApi = {
       return await apiClient<{ success: boolean; message: string }>('/system/kill-switch', {
         method: 'POST',
       });
-    } catch {
-      return {
-        success: true,
-        message: 'SYSTEM HALTED. Emergency circuit breaker opened at Tool Gateway.',
-      };
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return {
+          success: true,
+          message: 'SYSTEM HALTED. Emergency circuit breaker opened at Tool Gateway.',
+        };
+      }
+      throw err;
     }
   },
 
@@ -121,11 +127,14 @@ export const systemApi = {
       return await apiClient<{ success: boolean; message: string }>('/system/resume', {
         method: 'POST',
       });
-    } catch {
-      return {
-        success: true,
-        message: 'SYSTEM RESUMED. Tool Gateway returned to ENFORCE mode.',
-      };
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return {
+          success: true,
+          message: 'SYSTEM RESUMED. Tool Gateway returned to ENFORCE mode.',
+        };
+      }
+      throw err;
     }
   },
 };

@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingState, ErrorState } from '../components/common/FeedbackStates';
 import { AlertTriangle, Filter, ChevronRight } from 'lucide-react';
 import type { Incident } from '../types';
+import { IS_DEMO_MODE } from '../api/client';
 
 export const IncidentsListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export const IncidentsListPage: React.FC = () => {
   });
 
   if (isLoading) return <LoadingState message="Fetching active security incidents..." />;
-  if (error) return <ErrorState message="Failed to load incident repository." onRetry={() => refetch()} />;
+  if (error) return <ErrorState message={`Failed to load incident repository. ${IS_DEMO_MODE ? 'Demo mode is enabled but no synthetic incidents available.' : 'Backend unreachable — set VITE_DEMO_MODE=true in .env for synthetic data.'}`} onRetry={() => refetch()} />;
 
   const filteredIncidents = (incidents || []).filter((inc: Incident) => {
     if (scenarioFilter !== 'ALL' && inc.scenarioId !== scenarioFilter) return false;

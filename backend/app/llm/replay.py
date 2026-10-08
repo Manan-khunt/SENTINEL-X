@@ -25,8 +25,16 @@ class ReplayAdapter(LLMAdapter):
         h = state_hash(s)
         if h not in _cache:
             _cache[h] = self._fallback.plan(s)
+            self.tokens_used_last_plan = self._fallback.tokens_used_last_plan
+        else:
+            # Cache hit: no new inference cost.
+            self.tokens_used_last_plan = 0
         return _cache[h]
 
 
 def cache_size() -> int:
     return len(_cache)
+
+
+def clear_cache() -> None:
+    _cache.clear()

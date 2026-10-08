@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -76,7 +76,7 @@ def kill_switch(db: Session = Depends(get_db), user: User = Depends(require_min_
 @router.post("/stream/ticket")
 def sse_ticket(db: Session = Depends(get_db), user: User = Depends(current_user)):
     ticket = secrets.token_urlsafe(24)
-    exp = datetime.utcnow() + timedelta(seconds=get_settings().SSE_TICKET_TTL)
+    exp = datetime.now(timezone.utc) + timedelta(seconds=get_settings().SSE_TICKET_TTL)
     db.add(SSETicket(ticket=ticket, username=user.username, expires_at=exp))
     db.commit()
     return {"ticket": ticket, "expires_at": exp.isoformat()}

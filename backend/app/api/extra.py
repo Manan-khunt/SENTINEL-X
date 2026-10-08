@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,27 @@ from app.db.session import get_db
 from app.db.tables import AuditLog, SSETicket, User
 
 router = APIRouter()
+
+
+def _as_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+@router.get("/audit/verify")
+def audit_verify(
+    incident_id: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _u: User = Depends(current_user),
+):
+    result = verify_chain(db, incident_id)
+    return {
+        "ok": result["ok"],
+        "status": result["status"],
+        "broken_at": result.get("broken_at"),
+        "incident_id": incident_id,
+    }
 
 
 @router.get("/audit")
@@ -61,7 +82,7 @@ async def stream_incidents(
     incident_id: str, ticket: str, request: Request, db: Session = Depends(get_db)
 ):
     t = db.query(SSETicket).filter_by(ticket=ticket).first()
-    if not t or t.expires_at < datetime.utcnow():
+    if not t or _as_aware(t.expires_at) < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="bad ticket")
 
     async def gen():

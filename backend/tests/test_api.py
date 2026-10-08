@@ -44,10 +44,13 @@ def test_sse_ticket_flow(client):
     assert r.status_code == 200 and "ticket" in r.json()
 
 
-def test_benchmark_smoke(client):
+def test_benchmark_smoke(client, db):
+    # Subset run through the real orchestrator (full 800-run batch is CLI-only).
+    from app.eval.run_benchmark import run_batch
+
+    batch_id = run_batch(db, only=[("scenario_1", 1001), ("scenario_2", 1001)])
+    assert batch_id.startswith("bench_")
     t = auth_token(client, "analyst", "analyst123")
     h = {"Authorization": f"Bearer {t}"}
-    r = client.post("/api/benchmark/run", headers=h)
-    assert r.status_code == 200, r.text[:500]
     lst = client.get("/api/benchmark", headers=h).json()
     assert lst and lst[0]["metrics"]["B3"]

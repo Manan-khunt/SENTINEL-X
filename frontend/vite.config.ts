@@ -17,5 +17,23 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        // Keep SSE working without proxy buffering
+        headers: {
+          Connection: 'keep-alive',
+        },
+        configure: (proxy, _options) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            if (req.url && req.url.includes('/stream/')) {
+              proxyReq.setHeader('Cache-Control', 'no-cache');
+              proxyReq.setHeader('Accept', 'text/event-stream');
+            }
+          });
+        },
+      },
+    },
   },
 })

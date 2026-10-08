@@ -1,9 +1,23 @@
-import { apiClient } from './client';
+import { apiClient, IS_DEMO_MODE } from './client';
 import type { ActionProofData } from '../types';
 
 export const actionsApi = {
   getActionProof: async (actionId: string): Promise<ActionProofData> => {
-    return apiClient<ActionProofData>(`/actions/${actionId}/proof`);
+    try {
+      return await apiClient<ActionProofData>(`/actions/${actionId}/proof`);
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return {
+          action: 'isolate_endpoint',
+          target: 'workstation_17',
+          riskScore: 22,
+          approval: { status: 'APPROVED_AUTO', required: false, timeoutSeconds: 300 },
+          dryRun: { predictedPathRemoval: 'Path A blocked', sideEffects: 'None' },
+          result: 'EXECUTED',
+        } as unknown as ActionProofData;
+      }
+      throw err;
+    }
   },
 
   approveAction: async (actionId: string, analystNotes?: string): Promise<{ success: boolean; status: string }> => {
@@ -12,8 +26,11 @@ export const actionsApi = {
         method: 'POST',
         body: JSON.stringify({ analystNotes }),
       });
-    } catch {
-      return { success: true, status: 'APPROVED' };
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return { success: true, status: 'APPROVED' };
+      }
+      throw err;
     }
   },
 
@@ -23,8 +40,11 @@ export const actionsApi = {
         method: 'POST',
         body: JSON.stringify({ reason }),
       });
-    } catch {
-      return { success: true, status: 'DENIED', alternativeProposed: true };
+    } catch (err: any) {
+      if (IS_DEMO_MODE) {
+        return { success: true, status: 'DENIED', alternativeProposed: true };
+      }
+      throw err;
     }
   },
 };

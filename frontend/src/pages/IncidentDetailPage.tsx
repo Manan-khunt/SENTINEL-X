@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { AuditTable } from '../components/audit/AuditTable';
 import type { AttackPath } from '../types';
+import { IS_DEMO_MODE } from '../api/client';
 
 export const IncidentDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -30,7 +31,7 @@ export const IncidentDetailPage: React.FC = () => {
   });
 
   if (isLoading) return <LoadingState message={`Fetching incident ${incidentId}...`} />;
-  if (error || !incident) return <ErrorState message={`Incident ${incidentId} could not be resolved.`} />;
+  if (error || !incident) return <ErrorState message={`Incident ${incidentId} could not be resolved. ${IS_DEMO_MODE ? 'Demo mode is ON but incident not found.' : 'Backend unreachable - set VITE_DEMO_MODE=true for synthetic data.'}`} />;
 
   const currentPath = location.pathname;
   let activeTab = 'overview';
