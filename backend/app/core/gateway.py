@@ -62,6 +62,10 @@ def execute(
     idempotency_key: str = "",
 ) -> dict:
     """Validate + risk + policy + execute. Returns action record dict."""
+    from app.core.system_state import is_halted as _is_halted
+
+    if _is_halted(db):
+        raise GatewayError("system halted by kill switch")
     if not registry.tool_exists(tool):
         raise GatewayError(f"unknown tool: {tool}")
     _check_rate_limit(db, incident_id)

@@ -177,6 +177,19 @@ class SSETicket(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class SystemState(Base):
+    """Persisted kill-switch / mode state. Survives app restart.
+
+    Keys: "status" (RUNNING | HALTED), "mode" (ENFORCE | SHADOW).
+    """
+
+    __tablename__ = "system_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(64), default="RUNNING")
+    updated_by: Mapped[str | None] = mapped_column(String(64), default=None)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 # Insert-only protection: reject UPDATE/DELETE on audit_log at the DB layer.
 # Installed via DDL so every `create_all` (prod + test DBs) gets it.
 event.listen(

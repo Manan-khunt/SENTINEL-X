@@ -12,7 +12,10 @@ from app.eval.run_benchmark import RESULTS_DIR, run_batch, run_one
 
 
 def _incident_actions(db, incident_id: str) -> list:
-    return db.query(Action).filter_by(incident_id=incident_id).order_by(Action.id).all()
+    # rowid = insertion order (Action.id has a random hex suffix).
+    from sqlalchemy import text as _text
+
+    return db.query(Action).filter_by(incident_id=incident_id).order_by(_text("rowid")).all()
 
 
 def _latest_incident(db) -> Incident:

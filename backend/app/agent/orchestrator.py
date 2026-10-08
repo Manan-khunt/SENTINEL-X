@@ -25,6 +25,7 @@ from app.core.graph_engine import (
     graph_snapshot,
 )
 from app.core.sanitizer import sanitize_telemetry
+from app.core.system_state import is_halted
 from app.core.verifier import verify_containment
 from app.db.tables import Action, AgentStep, Approval, GraphSnapshot, Incident
 from app.db.tables import Plan as PlanRow
@@ -33,7 +34,8 @@ from app.env.environment import apply_agent_effect, initial_state
 from app.llm.adapter import LLMAdapter
 from app.tools.respond import simulate_action
 
-SYSTEM_STATE = {"status": "RUNNING"}  # RUNNING | HALTED (kill switch)
+SYSTEM_STATE = {"status": "RUNNING"}  # deprecated shim; DB is authoritative
+
 
 _incident_counter = {"n": 1042, "synced": False}
 
@@ -102,9 +104,7 @@ def create_incident(
     actor: str,
     allow_replan: bool | None = None,
 ) -> Incident:
-    if SYSTEM_STATE["status"] == "HALTED":
-        raise GatewayError("system halted by kill switch")
-    if SYSTEM_STATE["status"] == "HALTED":
+    if is_halted(db):
         raise GatewayError("system halted by kill switch")
     inc_id = _next_incident_id(db)
     state = initial_state(scenario_id, seed)
@@ -190,7 +190,7 @@ def run_loop(
 def agent_cycle(db: Session, inc: Incident, actor: str, allow_replan: bool = True) -> str:
     """One OBSERVE..VERIFY cycle. Returns done|replan|pause|escalated."""
     settings = get_settings()
-    if SYSTEM_STATE["status"] == "HALTED":
+    if is_halted(db):
         inc.status = "HALTED"
         db.commit()
         anchor_current_head(db)
@@ -236,23 +236,35 @@ def agent_cycle(db: Session, inc: Incident, actor: str, allow_replan: bool = Tru
             raw = fallback_plan(sstate)
             plan, err = validate_plan(raw)
     else:
+        errors: list[str] = []
         for attempt in range(3):  # initial + max 2 retries
             try:
-                raw = adapter.plan(sstate)
+                raw = adapter.plan(sstate, errors if errors else None)
             except Exception as e:  # LLM unavailable -> fallback
                 raw = fallback_plan(sstate)
                 append_event(db, inc.id, actor, "plan.fallback", {"reason": str(e)})
+                plan, err = validate_plan(raw)
                 break
             tokens_for_step = adapter.tokens_used_last_plan
             plan, err = validate_plan(raw)
             if plan is not None:
                 break
             first_pass_valid = False if attempt == 0 else first_pass_valid
+            errors.append(err)
             append_event(db, inc.id, actor, "plan.invalid", {"attempt": attempt, "error": err})
             if attempt >= 2:
                 raw = fallback_plan(sstate)
                 plan, err = validate_plan(raw)
-    assert plan is not None
+    if plan is None:
+        # Even the deterministic fallback is invalid: do not crash the loop.
+        # Record the failure, escalate for a human, and return cleanly.
+        append_event(db, inc.id, actor, "plan.failed", {"error": err, "objective": "no valid plan"})
+        inc.status = "ESCALATED"
+        inc.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        anchor_current_head(db)
+        events.publish(inc.id, "incident.escalated", {"reason": "no valid plan"})
+        return "escalated"
     _record_step(db, inc.id, step, "PLAN", {"objective": plan.objective, "tokens": tokens_for_step})
     db.add(
         PlanRow(

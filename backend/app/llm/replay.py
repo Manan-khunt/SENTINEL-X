@@ -11,8 +11,9 @@ from app.llm.mock import MockAdapter
 _cache: dict[str, dict] = {}
 
 
-def state_hash(s: dict) -> str:
-    return hashlib.sha256(json.dumps(s, sort_keys=True, default=str).encode()).hexdigest()
+def state_hash(s: dict, errors: list[str] | None = None) -> str:
+    payload = {"state": s, "errors": errors or []}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
 class ReplayAdapter(LLMAdapter):
@@ -21,10 +22,10 @@ class ReplayAdapter(LLMAdapter):
     def __init__(self) -> None:
         self._fallback = MockAdapter()
 
-    def plan(self, s: dict) -> dict:
-        h = state_hash(s)
+    def plan(self, s: dict, errors: list[str] | None = None) -> dict:
+        h = state_hash(s, errors)
         if h not in _cache:
-            _cache[h] = self._fallback.plan(s)
+            _cache[h] = self._fallback.plan(s, errors)
             self.tokens_used_last_plan = self._fallback.tokens_used_last_plan
         else:
             # Cache hit: no new inference cost.

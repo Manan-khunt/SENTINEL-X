@@ -10,13 +10,13 @@ from app.llm.adapter import LLMAdapter
 class MockAdapter(LLMAdapter):
     temperature = 0
 
-    def plan(self, s: dict) -> dict:
-        plan = self._plan(s)
+    def plan(self, s: dict, errors: list[str] | None = None) -> dict:
+        plan = self._plan(s, errors)
         # Simulated token accounting derived from the actual output size.
         self.tokens_used_last_plan = max(1, len(json.dumps(plan, sort_keys=True)) // 4)
         return plan
 
-    def _plan(self, s: dict) -> dict:
+    def _plan(self, s: dict, errors: list[str] | None = None) -> dict:
         scenario = s.get("scenario_id", "scenario_2")
         paths: list[list[str]] = s.get("active_paths_detail", [])
         flat = [n for p in paths for n in p]

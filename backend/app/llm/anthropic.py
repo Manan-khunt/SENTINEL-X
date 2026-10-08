@@ -16,13 +16,15 @@ class AnthropicAdapter(LLMAdapter):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
         self._fallback = MockAdapter()
 
-    def plan(self, s: dict) -> dict:
+    def plan(self, s: dict, errors: list[str] | None = None) -> dict:
         if not self.api_key:
-            return self._fallback.plan(s)
+            return self._fallback.plan(s, errors)
         try:
             import httpx  # lazy
 
             # Minimal structured call; on any failure use deterministic fallback.
+            # Prior validation errors are passed back so the model can correct.
+            err_hint = f" Previous validation errors to fix: {errors}." if errors else ""
             resp = httpx.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={"x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
@@ -30,12 +32,14 @@ class AnthropicAdapter(LLMAdapter):
                     "model": self.model or "claude-3-5-sonnet-latest",
                     "max_tokens": 512,
                     "temperature": 0,
-                    "messages": [{"role": "user", "content": f"Return JSON plan for: {s}"}],
+                    "messages": [
+                        {"role": "user", "content": f"Return JSON plan for: {s}.{err_hint}"}
+                    ],
                 },
                 timeout=10,
             )
             if resp.status_code == 200:
-                return self._fallback.plan(s)  # parse real output in prod; schema-validate
+                return self._fallback.plan(s, errors)  # parse real output in prod; schema-validate
         except Exception:
             pass
-        return self._fallback.plan(s)
+        return self._fallback.plan(s, errors)

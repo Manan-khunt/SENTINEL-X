@@ -22,6 +22,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.agent.orchestrator import create_incident, decide_approval, get_adapter
@@ -104,7 +105,9 @@ def run_one(
                 actor="benchmark-approver",
             )
     inc = db.query(Incident).filter_by(id=incident_id).first()
-    actions = db.query(Action).filter_by(incident_id=incident_id).order_by(Action.id).all()
+    # NOTE: Action.id is a random hex suffix, so ordering by it shuffles
+    # creation order. rowid preserves insertion order (deterministic).
+    actions = db.query(Action).filter_by(incident_id=incident_id).order_by(text("rowid")).all()
     nodes = (inc.env_state_json or {}).get("nodes", {})
 
     unsafe = [

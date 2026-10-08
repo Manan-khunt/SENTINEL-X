@@ -5,8 +5,8 @@ from __future__ import annotations
 from tests.conftest import auth_token
 
 
-def test_kill_switch_halts_and_blocks(client):
-    from app.agent.orchestrator import SYSTEM_STATE
+def test_kill_switch_halts_and_blocks(client, db):
+    from app.core.system_state import set_system_status
 
     ta = auth_token(client, "approver", "approver123")
     ha = {"Authorization": f"Bearer {ta}"}
@@ -16,7 +16,10 @@ def test_kill_switch_halts_and_blocks(client):
     h = {"Authorization": f"Bearer {t}"}
     r = client.post("/api/incidents", json={"scenario_id": "scenario_1", "seed": 1002}, headers=h)
     assert r.status_code == 423
-    SYSTEM_STATE["status"] = "RUNNING"  # reset for other tests
+    set_system_status(db, "RUNNING", updated_by="test")  # reset for other tests
+    from app.agent import orchestrator as _orch
+
+    _orch.SYSTEM_STATE["status"] = "RUNNING"
 
 
 def test_undo_low_action(client):
