@@ -1,0 +1,12 @@
+enterprise:
+  crown_jewel: customer_db
+  node_types: [user, device, server, credential, service_token, service, database]
+  edge_types: [logged_into, connected_to, can_access, authenticated_through, communicates_with]
+nodes:
+  - {id: user_1042, type: user, criticality: 60}
+  - {id: workstation_17, type: device, criticality: 55}
+  - {id: server_03, type: server, criticality: 80}
+  - {id: server_02, type: server, criticality: 80}
+  - {id: svc_token, type: service_token, criticality: 70}
+  - {id: admin_root, type: credential, criticality: 95}
+  - {id: customer_db, type: database, criticality: 100, protected: true}
