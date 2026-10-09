@@ -4,6 +4,8 @@ __pycache__/
 *.db-shm
 *.db-wal
 .env
+audit_anchors.jsonl
+test_audit_anchors.jsonl
 .pytest_cache/
 .ruff_cache/
 app/eval/results/*.json

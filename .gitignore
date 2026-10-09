@@ -1,0 +1,25 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Build artifacts & dependencies
+node_modules/
+dist/
+__pycache__/
+*.pyc
+
+# Local databases & runtime state
+*.db
+*.db-wal
+*.db-shm
+audit_anchors.jsonl
+test_audit_anchors.jsonl
+
+# Eval results (regenerable)
+eval/results/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

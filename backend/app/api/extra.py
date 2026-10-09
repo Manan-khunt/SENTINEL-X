@@ -1,4 +1,4 @@
-"""Audit + benchmark + SSE stream endpoints."""
+"""Audit + SSE stream endpoints."""
 
 from __future__ import annotations
 
@@ -24,9 +24,21 @@ def _as_aware(dt: datetime) -> datetime:
     return dt
 
 
-@router.get("/audit/verify")
+@router.get(
+    "/audit/verify",
+    tags=["Audit"],
+    summary="Verify the tamper-evident audit chain",
+    description="Recomputes every entry hash and the global `previous_hash` linkage "
+    "(GENESIS -> ...), then compares each external anchor entry against the DB row at "
+    "that sequence. Returns `{ok, status, broken_at, incident_id}` where `status` is "
+    "`INTACT` or `BROKEN_AT_ENTRY_{id}` / `BROKEN_AT_ANCHOR_{seq}`. "
+    "Terminology: the chain is **tamper-evident** (tampering is detectable), not tamper-proof. "
+    "Requires any authenticated role.",
+)
 def audit_verify(
-    incident_id: str | None = Query(default=None),
+    incident_id: str | None = Query(
+        default=None, description="Optional incident filter; global linkage is still verified."
+    ),
     db: Session = Depends(get_db),
     _u: User = Depends(current_user),
 ):
@@ -39,7 +51,14 @@ def audit_verify(
     }
 
 
-@router.get("/audit")
+@router.get(
+    "/audit",
+    tags=["Audit"],
+    summary="Recent audit entries (global)",
+    description="Latest 200 entries, newest first: `{id, incident_id, actor, event, payload, "
+    "previous_hash, hash}`. Only operational fields are exposed — no secrets or tokens. "
+    "Requires any authenticated role.",
+)
 def audit_all(db: Session = Depends(get_db), _u: User = Depends(current_user)):
     rows = db.query(AuditLog).order_by(AuditLog.id.desc()).limit(200).all()
     return [
@@ -56,7 +75,14 @@ def audit_all(db: Session = Depends(get_db), _u: User = Depends(current_user)):
     ]
 
 
-@router.get("/audit/{incident_id}")
+@router.get(
+    "/audit/{incident_id}",
+    tags=["Audit"],
+    summary="Incident audit trail + chain status",
+    description="All entries for one incident in chain order plus the global verification "
+    "`chain` status (`INTACT` or break location). History is append-only and never rewritten. "
+    "Requires any authenticated role.",
+)
 def audit_one(incident_id: str, db: Session = Depends(get_db), _u: User = Depends(current_user)):
     rows = db.query(AuditLog).filter_by(incident_id=incident_id).order_by(AuditLog.id).all()
     chain = verify_chain(db, incident_id)
@@ -77,7 +103,16 @@ def audit_one(incident_id: str, db: Session = Depends(get_db), _u: User = Depend
     }
 
 
-@router.get("/stream/incidents/{incident_id}")
+@router.get(
+    "/stream/incidents/{incident_id}",
+    tags=["Event Streaming"],
+    summary="SSE event stream for one incident",
+    description="Server-Sent Events stream. Authenticate with a `ticket` from "
+    "`POST /api/stream/ticket` (`?ticket=...`), not with a bearer header (EventSource "
+    "cannot set headers). History replays first so reconnects resync; dedupe on SSE `id`. "
+    "~30s window per connection; the client should reconnect. Ticket auth: `401` on bad/expired ticket.",  # noqa: E501
+    responses={401: {"description": "Bad or expired ticket."}},
+)
 async def stream_incidents(
     incident_id: str, ticket: str, request: Request, db: Session = Depends(get_db)
 ):

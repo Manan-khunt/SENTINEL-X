@@ -35,3 +35,33 @@ def get_settings() -> Settings:
 
 
 VERSION = "3.0.0"
+
+
+def describe_settings_safe(s: Settings) -> dict:
+    """Log-safe settings summary: names + shapes only, never secret values."""
+    db = s.DATABASE_URL or ""
+    dialect = db.split("://", 1)[0] if "://" in db else "unknown"
+    return {
+        "app_env": s.APP_ENV,
+        "demo_mode": s.DEMO_MODE,
+        "database_dialect": dialect,
+        "jwt_expiry": s.JWT_EXPIRY,
+        "jwt_secret_len": len(s.JWT_SECRET or ""),
+        "llm_provider": s.LLM_PROVIDER,
+        "llm_model": s.LLM_MODEL,
+        "frontend_origin": s.FRONTEND_ORIGIN,
+        "sse_ticket_ttl": s.SSE_TICKET_TTL,
+    }
+
+
+def validate_settings(s: Settings) -> None:
+    """Fail fast with a clear message when required settings are missing/weak."""
+    problems: list[str] = []
+    if not s.JWT_SECRET or len(s.JWT_SECRET) < 32:
+        problems.append("JWT_SECRET must be set to a string of at least 32 characters")
+    if s.LLM_PROVIDER.lower() == "anthropic" and not s.ANTHROPIC_API_KEY:
+        problems.append("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic")
+    if s.APP_ENV.lower() == "production" and s.DEMO_MODE:
+        problems.append("DEMO_MODE must be false when APP_ENV=production")
+    if problems:
+        raise RuntimeError("Invalid SENTINEL-X configuration: " + "; ".join(problems))

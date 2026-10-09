@@ -135,13 +135,13 @@ class AuditEntryOut(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(examples=["analyst"])
+    password: str = Field(examples=["analyst123"])
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    access_token: str = Field(examples=["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."])
+    token_type: str = Field(default="bearer", examples=["bearer"])
 
 
 class UserOut(BaseModel):
@@ -151,7 +151,27 @@ class UserOut(BaseModel):
 
 
 class CreateIncidentRequest(BaseModel):
-    scenario_id: str = "scenario_2"
-    seed: int = 42
-    mode: Mode = "ENFORCE"
-    configuration: Configuration = "B3"
+    scenario_id: str = Field(default="scenario_2", examples=["scenario_2"])
+    seed: int = Field(default=42, examples=[42])
+    mode: Mode = Field(default="ENFORCE", examples=["ENFORCE"])
+    configuration: Configuration = Field(default="B3", examples=["B3"])
+
+
+class HealthOut(BaseModel):
+    api: str = Field(examples=["ok"])
+    database: str = Field(examples=["ok"])
+    environment: str = Field(examples=["ok"])
+    agent: str = Field(examples=["RUNNING"])
+    version: str = Field(examples=["3.0.0"])
+
+
+class DiagnosticCheck(BaseModel):
+    status: str = Field(examples=["healthy"])
+    detail: str = Field(default="", examples=["SELECT 1 ok in 1.2ms"])
+    latency_ms: float | None = None
+
+
+class DiagnosticsOut(BaseModel):
+    status: str = Field(examples=["healthy"])
+    version: str = Field(examples=["3.0.0"])
+    checks: dict[str, DiagnosticCheck] = Field(default_factory=dict)
