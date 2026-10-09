@@ -100,3 +100,18 @@ rm ./sentinelx.db* ./audit_anchors.jsonl   # recreated + reseeded on next use
 
 Production: `docker compose up --build` serves backend on :8000 and the
 built frontend on :5173.
+
+Vercel (serverless) wiring exists (`vercel.json`, `api/index.py` bridge,
+root `requirements.txt`): the frontend builds to `frontend/dist` and
+`/api/*` rewrites to the Python function. Runtime DB/anchor paths come from
+`DATABASE_URL`/`ANCHOR_PATH` env (no contradictory hardcoded paths), but
+SQLite on ephemeral serverless storage is NOT durable: cold starts reset
+all data including audit evidence. Do not present that target as
+production-ready. External deployment NOT VERIFIED (no credentials in this
+environment); only the Docker path above was verified end to end.
+
+Benchmark evidence: full 800-run batch `bench_a8ca488c`
+(`backend/app/eval/results/bench_a8ca488c.json`, gitignored), B0 0/100,
+B1 100/100, B2 50/100, B3 100/100 with 0 unsafe / 0 unapproved HIGH /
+0 injection / 0 over-containment / 100% verification; paired B3/B1
+time-to-contain ratio 2.0 vs required <=0.6 (honest FAIL, see report).

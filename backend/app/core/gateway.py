@@ -163,6 +163,13 @@ def execute(
         if mode == "SHADOW":
             action.result = "SHADOW_RECOMMEND"
             db.commit()
+            append_event(
+                db,
+                incident_id,
+                actor,
+                "action.recommended",
+                {"action": action_id, "tool": tool, "target": target, "shadow": True},
+            )
             events.publish(
                 incident_id, "action.proposed", {"action": action_id, "tool": tool, "shadow": True}
             )

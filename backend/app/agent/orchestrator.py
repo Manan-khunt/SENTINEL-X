@@ -470,6 +470,21 @@ def decide_approval(
         ap.decided_by = actor
         ap.decided_at = datetime.now(timezone.utc)
         a.approval_status = "approved"
+        if (inc.mode if inc else "") == "SHADOW":
+            # Recommend-only mode: record the human decision but never
+            # execute environment changes, even after approval.
+            a.result = "SHADOW_RECOMMEND"
+            db.commit()
+            append_event(
+                db,
+                a.incident_id,
+                actor,
+                "action.approved",
+                {"action": action_id, "executed": False, "shadow": True},
+            )
+            events.publish(a.incident_id, "action.approved", {"action": action_id})
+            resume_after_approval(db, a.incident_id, actor)
+            return {"status": "approved", "action": action_id}
         # execute now through gateway effect directly (already risk/policy checked)
         apply_agent_effect(inc.env_state_json, a.tool, a.target)
         a.result = "SUCCESS"

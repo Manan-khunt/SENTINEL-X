@@ -42,11 +42,14 @@ def get_session_factory():
     if _SessionLocal is None:
         # First-use gate: lifespan calls init_db()/seed_db() explicitly,
         # but ASGI servers differ in lifespan handling, so first engine
-        # use also guarantees a usable database. Both steps are
-        # idempotent (checkfirst DDL, IF NOT EXISTS triggers,
+        # use also guarantees a usable database. All steps are idempotent
+        # (validated config, checkfirst DDL, IF NOT EXISTS triggers,
         # existence-checked seed rows).
+        from app.config import validate_settings as _validate
+
         from app.db.seed import seed_db as _seed
 
+        _validate(get_settings())
         init_db()
         _SessionLocal = sessionmaker(
             bind=get_engine(), autoflush=False, expire_on_commit=False, future=True

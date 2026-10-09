@@ -48,7 +48,7 @@ A runnable empty project: FastAPI health endpoint, Vite + React + Tailwind shell
 
 | Time | What was done | Result |
 |---|---|---|
-| | | |
+| 2026-10-09 | Final repair pass: Docker/prod config, JWT default rejection, SHADOW gateway fix, full benchmark, Docker + live E2E verification | Backend 78/78, frontend build/lint/8 tests green, bench 800 runs (6/7 thresholds), compose + live E2E green; TTC ratio 2.0 honest FAIL; Vercel NOT VERIFIED |
 
 ## Open questions / blockers (AI fills in; human answers)
 

@@ -29,7 +29,12 @@ def test_policy_tiers():
     assert policy_check("LOW", "workstation_17", s, "ENFORCE")["allowed"]
     assert policy_check("HIGH", "admin_root", s, "ENFORCE")["approval_required"]
     assert not policy_check("LOW", "customer_db", s, "ENFORCE")["allowed"]  # crown jewel
-    assert not policy_check("MEDIUM", "workstation_17", s, "SHADOW")["allowed"]
+    # SHADOW is recommend-only: the gateway must reach its SHADOW branch and
+    # record SHADOW_RECOMMEND, never mislabel the action BLOCKED (allowed
+    # must be True with no approval; execution is gated on mode, not allowed).
+    shadow = policy_check("MEDIUM", "workstation_17", s, "SHADOW")
+    assert shadow["allowed"] and not shadow["approval_required"]
+    assert shadow["reason"] == "shadow mode: recommend only"
 
 
 def test_gateway_rejects_unknown(db):

@@ -9,7 +9,8 @@ COPY app ./app
 
 ENV DATABASE_URL=sqlite:///./sentinelx.db \
     LLM_PROVIDER=mock \
-    APP_ENV=production
+    APP_ENV=production \
+    DEMO_MODE=false
 
 EXPOSE 8000
 

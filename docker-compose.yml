@@ -10,6 +10,12 @@ services:
     environment:
       DATABASE_URL: sqlite:///./sentinelx.db
       FRONTEND_ORIGIN: http://localhost:5173
+      # Documented local demonstration: development mode with demo defaults.
+      # Production MUST override APP_ENV=production, DEMO_MODE=false and a
+      # unique JWT_SECRET (see backend/.env.example); the backend refuses to
+      # start otherwise.
+      APP_ENV: development
+      DEMO_MODE: "true"
     volumes:
       - sentinelx-data:/app
 
