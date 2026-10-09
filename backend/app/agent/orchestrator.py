@@ -450,7 +450,9 @@ def resume_after_approval(db: Session, incident_id: str, actor: str) -> Incident
     )
 
 
-def decide_approval(db: Session, action_id: str, approve: bool, actor: str) -> dict:
+def decide_approval(
+    db: Session, action_id: str, approve: bool, actor: str, deny_reason: str = ""
+) -> dict:
     """Headless approve/deny used by the API endpoints and the benchmark.
 
     Same code path as the HTTP routes: records the decision, applies or
@@ -490,8 +492,14 @@ def decide_approval(db: Session, action_id: str, approve: bool, actor: str) -> d
         a.result = "DENIED"
         db.commit()
         append_event(
-            db, a.incident_id, actor, "action.denied", {"action": action_id, "tool": a.tool}
+            db,
+            a.incident_id,
+            actor,
+            "action.denied",
+            {"action": action_id, "tool": a.tool, "deny_reason": deny_reason[:500]},
         )
-        events.publish(a.incident_id, "action.denied", {"action": action_id})
+        events.publish(
+            a.incident_id, "action.denied", {"action": action_id, "deny_reason": deny_reason[:500]}
+        )
     resume_after_approval(db, a.incident_id, actor)
     return {"status": "approved" if approve else "denied", "action": action_id}

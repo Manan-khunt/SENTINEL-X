@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api';
+import { CopyButton } from '../components/CopyButton';
 import { Empty, ErrorBox, Loading, Panel, errMsg } from '../components/ui';
 
 export function AuditPage() {
@@ -29,23 +30,23 @@ export function AuditPage() {
           verify.data ? (
             <span
               className={`font-mono text-[11px] font-bold ${
-                verify.data.ok ? 'text-[#22C55E]' : 'text-[#EF4444]'
+                verify.data.ok ? 'text-success' : 'text-danger'
               }`}
             >
               CHAIN {verify.data.status}
               {verify.data.broken_at ? ` AT ENTRY ${verify.data.broken_at}` : ''}
             </span>
           ) : (
-            <span className="font-mono text-[10px] text-[#8FA0BF]">verifying…</span>
+            <span className="font-mono text-[10px] text-muted">verifying…</span>
           )
         }
       >
-        <div className="p-2 border-b border-[#22304D] flex gap-2">
+        <div className="p-2 border-b border-border flex gap-2">
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter by incident or event…"
-            className="flex-1 bg-[#16223B] border border-[#22304D] rounded px-2 py-1.5 text-xs font-mono text-[#E6EDF7] outline-none"
+            className="flex-1 bg-surface-2 border border-border rounded px-2 py-1.5 text-xs font-mono text-text outline-none"
           />
         </div>
         {list.isPending ? (
@@ -57,7 +58,7 @@ export function AuditPage() {
         ) : (
           <table className="w-full text-xs">
             <thead>
-              <tr className="font-mono text-[10px] text-[#8FA0BF] tracking-wider text-left border-b border-[#22304D] sticky top-0 bg-[#111A2E]">
+              <tr className="font-mono text-[10px] text-muted tracking-wider text-left border-b border-border sticky top-0 bg-surface">
                 <th className="px-3 py-2">ID</th>
                 <th className="px-3 py-2">INCIDENT</th>
                 <th className="px-3 py-2">ACTOR</th>
@@ -67,13 +68,14 @@ export function AuditPage() {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className="border-b border-[#22304D]/50 hover:bg-[#16223B]">
-                  <td className="px-3 py-1.5 font-mono text-[#8FA0BF]">#{r.id}</td>
-                  <td className="px-3 py-1.5 font-mono text-[#E6EDF7]">{r.incident_id || '—'}</td>
-                  <td className="px-3 py-1.5 font-mono text-[#E6EDF7]">{r.actor}</td>
-                  <td className="px-3 py-1.5 font-mono text-[#0E7C86]">{r.event}</td>
-                  <td className="px-3 py-1.5 font-mono text-[#8FA0BF]" title={r.hash}>
+                <tr key={r.id} className="border-b border-border/50 hover:bg-surface-2">
+                  <td className="px-3 py-1.5 font-mono text-muted">#{r.id}</td>
+                  <td className="px-3 py-1.5 font-mono text-text">{r.incident_id || '—'}</td>
+                  <td className="px-3 py-1.5 font-mono text-text">{r.actor}</td>
+                  <td className="px-3 py-1.5 font-mono text-primary">{r.event}</td>
+                  <td className="px-3 py-1.5 font-mono text-muted" title={r.hash}>
                     {r.hash.slice(0, 12)}… ← {r.previous_hash.slice(0, 12)}…
+                    <CopyButton value={r.hash} label={`audit hash #${r.id}`} />
                   </td>
                 </tr>
               ))}

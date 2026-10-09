@@ -1,82 +1,132 @@
 @import "tailwindcss";
 
+/* TACTICAL SIGNAL theme — tokens from DESIGN.md §2.
+   Components must use these utilities (bg-bg, bg-surface, border-border,
+   text-text, text-muted, bg-primary, text-danger, ...) — never inline hex. */
 @theme {
-  --color-bg-base: #0B1220;
-  --color-surface-base: #111A2E;
-  --color-surface-2: #16223B;
-  --color-border-base: #22304D;
-  --color-text-primary: #E6EDF7;
-  --color-text-muted: #8FA0BF;
-  --color-brand-primary: #0E7C86;
-  --color-brand-hover: #12929E;
-  --color-brand-soft: #0E3B45;
-  --color-status-danger: #EF4444;
-  --color-status-warning: #F59E0B;
-  --color-status-success: #22C55E;
-  --color-status-info: #3B82F6;
-  --color-graph-diff: #A78BFA;
+  --color-bg: #0b1220;
+  --color-surface: #111a2e;
+  --color-surface-2: #16223b;
+  --color-border: #22304d;
+  --color-text: #e6edf7;
+  --color-muted: #8fa0bf;
+  --color-primary: #0e7c86;
+  --color-primary-hover: #12929e;
+  --color-primary-soft: #0e3b45;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-success: #22c55e;
+  --color-info: #3b82f6;
+  --color-diff: #a78bfa;
 
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @layer base {
   * {
-    border-color: #22304D;
+    border-color: var(--color-border);
   }
-  
+
   body {
-    background-color: #0B1220;
-    color: #E6EDF7;
-    font-family: 'Inter', sans-serif;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
     margin: 0;
     padding: 0;
     overflow: hidden;
   }
-  
-  /* Custom technical scrollbar */
+
+  :focus-visible {
+    outline: 2px solid var(--color-primary-hover);
+    outline-offset: 2px;
+  }
+
   ::-webkit-scrollbar {
     width: 5px;
     height: 5px;
   }
   ::-webkit-scrollbar-track {
-    background: #0B1220;
+    background: var(--color-bg);
   }
   ::-webkit-scrollbar-thumb {
-    background: #22304D;
+    background: var(--color-border);
     border-radius: 2px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #0E7C86;
+    background: var(--color-primary);
   }
 }
 
-/* Technical pulse & radar indicator */
+/* Subtle status pulse (RUNNING / AWAITING_APPROVAL dots). */
 @keyframes pulse-subtle {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .animate-pulse-subtle {
   animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Glass & panel utilities */
+/* New timeline rows fade in once (120ms, DESIGN.md §7). */
+@keyframes timeline-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.timeline-in {
+  animation: timeline-in 120ms ease-out;
+}
+
+/* Toast entrance. */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.toast-in {
+  animation: toast-in 150ms ease-out;
+}
+
+/* Flat SOC panels: 1px border, 4px radius, no shadows. */
 .soc-panel {
-  background-color: #111A2E;
-  border: 1px solid #22304D;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
 }
 
 .soc-panel-sub {
-  background-color: #16223B;
-  border: 1px solid #22304D;
+  background-color: var(--color-surface-2);
+  border: 1px solid var(--color-border);
 }
 
-/* Cytoscape container styling */
+/* Cytoscape viewport: flat background, no gradients. */
 .cytoscape-container {
   width: 100%;
   height: 100%;
-  background: radial-gradient(#16223B 1px, transparent 1px);
-  background-size: 20px 20px;
-  background-color: #0B1220;
+  background-color: var(--color-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-subtle,
+  .timeline-in,
+  .toast-in {
+    animation: none;
+  }
 }

@@ -143,3 +143,29 @@ def test_audit_verification_terms(client):
     assert v["broken_at"] is None
     one = client.get("/api/audit", headers=h).json()
     assert isinstance(one, list)
+
+
+def test_deny_records_reason(client):
+    t = auth_token(client, "analyst", "analyst123")
+    h = _bearer(t)
+    inc = client.post(
+        "/api/incidents",
+        json={"scenario_id": "scenario_4", "seed": 42},
+        headers=h,
+    ).json()
+    acts = client.get(f"/api/incidents/{inc['id']}/actions", headers=h).json()
+    pending = [a for a in acts if a["approval_status"] == "pending"]
+    if not pending:
+        return
+    ta = auth_token(client, "approver", "approver123")
+    r = client.post(
+        f"/api/actions/{pending[0]['id']}/deny",
+        json={"reason": "too broad for prod"},
+        headers=_bearer(ta),
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "denied"
+    tl = client.get(f"/api/incidents/{inc['id']}/timeline", headers=h).json()
+    denials = [e for e in tl["events"] if e["event"] == "action.denied"]
+    assert denials
+    assert (denials[-1]["payload"] or {}).get("deny_reason") == "too broad for prod"

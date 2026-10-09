@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.agent.orchestrator import create_incident, decide_approval, run_loop
@@ -370,7 +370,9 @@ def approve(
     "/actions/{action_id}/deny",
     tags=["Actions and Approvals"],
     summary="Deny a HIGH-risk action",
-    description="Records denial; the tool is never executed. Requires role `approver`+.",
+    description="Records denial with an optional short reason (`{}` or "
+    "`{\"reason\": \"...\"}`); the tool is never executed. "
+    "Requires role `approver`+.",
     responses={
         400: {"description": "No pending approval."},
         403: {"description": "Requires approver+."},
@@ -379,11 +381,13 @@ def approve(
 )
 def deny(
     action_id: str,
+    payload: dict | None = Body(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(require_min_role("approver")),
 ):
+    reason = str((payload or {}).get("reason", ""))[:500]
     try:
-        out = decide_approval(db, action_id, False, user.username)
+        out = decide_approval(db, action_id, False, user.username, deny_reason=reason)
     except GatewayError as e:
         msg = str(e)
         raise HTTPException(status_code=404 if "not found" in msg else 400, detail=msg) from e

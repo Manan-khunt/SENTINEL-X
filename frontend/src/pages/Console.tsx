@@ -7,9 +7,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, connectIncidentStream } from '../api';
 import { useAuth } from '../auth';
 import { AttackGraph } from '../components/Graph';
+import { CopyButton, truncHash } from '../components/CopyButton';
+import { PhaseIcon } from '../components/PhaseIcon';
+import { useToasts } from '../components/Toasts';
 import { Empty, ErrorBox, KV, Loading, Panel, RiskBadge, StatusBadge, errMsg } from '../components/ui';
 import { roleAtLeast } from '../types';
-import type { GraphDiffPayload, LiveEvent } from '../types';
+import type { ActionItem, GraphDiffPayload, LiveEvent } from '../types';
 
 function fmtPayload(v: unknown): string {
   if (v === null || v === undefined) return '—';
@@ -25,7 +28,9 @@ export function ConsolePage() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const qc = useQueryClient();
+  const toast = useToasts();
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
+  const [denyReasons, setDenyReasons] = useState<Record<string, string>>({});
   const [live, setLive] = useState<LiveEvent[]>([]);
   const [sseState, setSseState] = useState<'CONNECTING' | 'LIVE' | 'RECONNECTING' | 'DISCONNECTED'>(
     'CONNECTING',
@@ -141,11 +146,37 @@ export function ConsolePage() {
 
   const step = useMutation({
     mutationFn: () => api.stepIncident(id),
-    onSuccess: refresh,
+    onSuccess: (inc) => {
+      refresh();
+      toast.push('success', `Step complete — ${inc.status}`);
+    },
+    onError: (e) => toast.push('error', 'Step failed', errMsg(e)),
   });
-  const approve = useMutation({ mutationFn: api.approve, onSuccess: refresh });
-  const deny = useMutation({ mutationFn: api.deny, onSuccess: refresh });
-  const undo = useMutation({ mutationFn: api.undo, onSuccess: refresh });
+  const approve = useMutation({
+    mutationFn: api.approve,
+    onSuccess: (r) => {
+      refresh();
+      toast.push('success', `Action approved — ${r.action}`);
+    },
+    onError: (e) => toast.push('error', 'Approve failed', errMsg(e)),
+  });
+  const deny = useMutation({
+    mutationFn: ({ actionId, reason }: { actionId: string; reason: string }) =>
+      api.deny(actionId, reason),
+    onSuccess: (r) => {
+      refresh();
+      toast.push('info', `Action denied — ${r.action}`);
+    },
+    onError: (e) => toast.push('error', 'Deny failed', errMsg(e)),
+  });
+  const undo = useMutation({
+    mutationFn: api.undo,
+    onSuccess: (r) => {
+      refresh();
+      toast.push('success', `Action undone — ${r.action}`);
+    },
+    onError: (e) => toast.push('error', 'Undo failed', errMsg(e)),
+  });
 
   const events = useMemo(() => timeline.data?.events || [], [timeline.data]);
 
@@ -204,6 +235,11 @@ export function ConsolePage() {
     return s;
   }, [paths.data]);
 
+  const foothold = useMemo(
+    () => paths.data?.paths?.[0]?.nodes?.[0] || null,
+    [paths.data],
+  );
+
   const pendingApproval = useMemo(
     () => (actions.data || []).filter((a) => a.approval_status === 'pending'),
     [actions.data],
@@ -217,37 +253,157 @@ export function ConsolePage() {
     return <ErrorBox message={errMsg(incident.error)} onRetry={() => incident.refetch()} />;
   const inc = incident.data;
 
+  const approvalPanel = (
+    <Panel
+      title="HUMAN APPROVAL"
+      className={pendingApproval.length > 0 ? 'border-warning/60 border-l-2 border-l-warning' : ''}
+      right={
+        pendingApproval.length > 0 ? (
+          <span className="font-mono text-[10px] font-bold text-warning" aria-live="polite">
+            {pendingApproval.length} PENDING
+          </span>
+        ) : undefined
+      }
+    >
+      <div className="p-2 flex flex-col gap-1.5">
+        {pendingApproval.length === 0 ? (
+          <Empty message="No actions awaiting approval." />
+        ) : (
+          pendingApproval.map((a) => (
+            <ApprovalCard
+              key={a.id}
+              action={a}
+              canApprove={canApprove}
+              reason={denyReasons[a.id] || ''}
+              onReason={(v) => setDenyReasons((prev) => ({ ...prev, [a.id]: v }))}
+              onApprove={() => approve.mutate(a.id)}
+              onDeny={() => deny.mutate({ actionId: a.id, reason: denyReasons[a.id] || '' })}
+              busy={approve.isPending || deny.isPending}
+            />
+          ))
+        )}
+      </div>
+    </Panel>
+  );
+
+  const proofPanel = (
+    <Panel title="ACTION PROOF" className="flex-1">
+      {actions.isPending ? (
+        <Loading />
+      ) : actions.isError ? (
+        <ErrorBox message={errMsg(actions.error)} onRetry={() => actions.refetch()} />
+      ) : (actions.data || []).length === 0 ? (
+        <Empty message="No tool actions recorded for this incident." />
+      ) : (
+        <div className="p-2 flex flex-col gap-1.5">
+          {(actions.data || []).map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setSelectedAction(a.id)}
+              className={`text-left rounded px-2 py-1.5 border font-mono text-[11px] ${
+                selectedAction === a.id
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border bg-surface-2 hover:border-primary/50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-text font-semibold">
+                  {a.tool}({a.target})
+                </span>
+                <span className="ml-auto">
+                  <RiskBadge tier={a.risk_tier} score={a.risk_score} />
+                </span>
+              </div>
+              <div className="text-muted text-[10px] mt-0.5">
+                {a.approval_status} · {a.result}
+                {a.undone ? ' · UNDONE' : ''}
+              </div>
+            </button>
+          ))}
+          {selectedAction &&
+            (proof.isPending ? (
+              <Loading message="Loading proof…" />
+            ) : proof.isError ? (
+              <ErrorBox message={errMsg(proof.error)} onRetry={() => proof.refetch()} />
+            ) : (
+              proof.data && (
+                <div className="rounded border border-border bg-bg p-2">
+                  <KV k="ACTION" v={proof.data.action} />
+                  <KV k="TARGET" v={proof.data.target} />
+                  <KV k="REASON" v={proof.data.reason} mono={false} />
+                  <KV k="RISK" v={proof.data.risk} />
+                  <KV
+                    k="FACTORS"
+                    v={`crit ${proof.data.criticality} · blast ${proof.data.blast} · irrev ${proof.data.irreversibility} · unc ${proof.data.uncertainty}`}
+                  />
+                  <KV k="DRY-RUN" v={proof.data.dry_run} mono={false} />
+                  <KV k="APPROVAL" v={proof.data.approval} />
+                  <KV k="REVERSIBLE" v={proof.data.reversible ? 'YES' : 'NO'} />
+                  <KV k="RESULT" v={proof.data.result} />
+                  <div className="flex items-start justify-between gap-3 py-1 border-b border-border/50 last:border-0">
+                    <span className="text-[10px] tracking-[0.12em] text-muted font-semibold shrink-0 pt-0.5">
+                      LOG HASH
+                    </span>
+                    <span className="text-xs text-right text-text break-all font-mono">
+                      {truncHash(proof.data.log_hash)}
+                      <CopyButton value={proof.data.log_hash} label="log hash" />
+                    </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-3 py-1 border-b border-border/50 last:border-0">
+                    <span className="text-[10px] tracking-[0.12em] text-muted font-semibold shrink-0 pt-0.5">
+                      PREV HASH
+                    </span>
+                    <span className="text-xs text-right text-text break-all font-mono">
+                      {truncHash(proof.data.previous_hash)}
+                      <CopyButton value={proof.data.previous_hash} label="previous hash" />
+                    </span>
+                  </div>
+                  {canAct && (
+                    <UndoButton
+                      actionId={selectedAction}
+                      onUndo={() => undo.mutate(selectedAction)}
+                      busy={undo.isPending}
+                    />
+                  )}
+                </div>
+              )
+            ))}
+        </div>
+      )}
+    </Panel>
+  );
+
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Incident header strip */}
-      <div className="flex items-center gap-4 px-3 py-2 border-b border-[#22304D] bg-[#111A2E] shrink-0 flex-wrap">
-        <span className="font-mono text-sm font-bold text-[#E6EDF7]">{inc.id}</span>
-        <span className="font-mono text-[11px] text-[#8FA0BF]">
+      <div className="flex items-center gap-4 px-3 py-2 border-b border-border bg-surface shrink-0 flex-wrap">
+        <span className="font-mono text-sm font-bold text-text">{inc.id}</span>
+        <span className="font-mono text-[11px] text-muted">
           {inc.scenario} · seed {inc.seed} · {inc.configuration}
         </span>
         <StatusBadge status={inc.status} />
-        <span className="font-mono text-[11px] text-[#8FA0BF]">
-          step <span className="text-[#E6EDF7]">{inc.simulation_step}</span> · replans{' '}
-          <span className={inc.replans > 0 ? 'text-[#A78BFA] font-bold' : 'text-[#E6EDF7]'}>
+        <span className="font-mono text-[11px] text-muted">
+          step <span className="text-text">{inc.simulation_step}</span> · replans{' '}
+          <span className={inc.replans > 0 ? 'text-diff font-bold' : 'text-text'}>
             {inc.replans}
           </span>{' '}
           · graph v{inc.graph_version}
         </span>
         {replanned && (
-          <span className="font-mono text-[11px] font-bold text-[#A78BFA] border border-[#A78BFA]/50 bg-[#A78BFA]/10 rounded px-1.5 py-0.5">
+          <span className="font-mono text-[11px] font-bold text-diff border border-diff/50 bg-diff/10 rounded px-1.5 py-0.5">
             REPLAN TRIGGERED
           </span>
         )}
         <span className="flex-1" />
-        <span className="font-mono text-[10px] text-[#8FA0BF]">
+        <span className="font-mono text-[10px] text-muted">
           SSE:{' '}
           <span
             className={
               sseState === 'LIVE'
-                ? 'text-[#22C55E]'
+                ? 'text-success'
                 : sseState === 'DISCONNECTED'
-                  ? 'text-[#EF4444]'
-                  : 'text-[#F59E0B]'
+                  ? 'text-danger'
+                  : 'text-warning'
             }
           >
             {sseState}
@@ -255,7 +411,7 @@ export function ConsolePage() {
         </span>
         <button
           onClick={() => refresh()}
-          className="font-mono text-[11px] px-2 py-1 rounded bg-[#16223B] border border-[#22304D] hover:bg-[#1f3054]"
+          className="font-mono text-[11px] px-2 py-1 rounded bg-surface-2 border border-border hover:brightness-125"
         >
           REFRESH
         </button>
@@ -263,7 +419,7 @@ export function ConsolePage() {
           <button
             onClick={() => step.mutate()}
             disabled={step.isPending}
-            className="font-mono text-[11px] px-2 py-1 rounded bg-[#0E7C86] hover:bg-[#12929E] disabled:opacity-50 text-white font-semibold"
+            className="font-mono text-[11px] px-2 py-1 rounded bg-primary hover:bg-primary-hover disabled:opacity-50 text-white font-semibold"
           >
             {step.isPending ? 'STEPPING…' : 'RUN STEP'}
           </button>
@@ -272,7 +428,7 @@ export function ConsolePage() {
 
       {/* Injection banner (Scenario 6: telemetry treated as data) */}
       {injections.length > 0 && (
-        <div className="px-3 py-1.5 bg-[#F59E0B]/10 border-b border-[#F59E0B]/40 font-mono text-[11px] text-[#F59E0B] shrink-0">
+        <div className="px-3 py-1.5 bg-warning/10 border-b border-warning/40 font-mono text-[11px] text-warning shrink-0">
           UNTRUSTED TELEMETRY SANITIZED — {injections.length} injection attempt(s) flagged and
           blocked at the gateway. Instruction-like log content never becomes a tool call.
         </div>
@@ -290,6 +446,7 @@ export function ConsolePage() {
               snapshot={graph.data}
               activeNodes={activeNodes}
               diff={latestDiff}
+              foothold={foothold}
               height="100%"
             />
           )}
@@ -299,7 +456,7 @@ export function ConsolePage() {
           title="AGENT TIMELINE"
           className="w-[32%]"
           right={
-            <span className="font-mono text-[10px] text-[#8FA0BF]">
+            <span className="font-mono text-[10px] text-muted">
               {timeline.data ? `${timeline.data.steps.length} steps · ${events.length} events` : ''}
             </span>
           }
@@ -311,16 +468,17 @@ export function ConsolePage() {
           ) : (
             <div ref={timelineRef} className="p-2 flex flex-col gap-1.5">
               {timeline.data.steps.map((s, i) => (
-                <div key={i} className="soc-panel-sub rounded px-2 py-1.5">
+                <div key={i} className="timeline-in soc-panel-sub rounded px-2 py-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] font-bold text-[#0E7C86] tracking-wider">
+                    <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-bold text-primary tracking-wider">
+                      <PhaseIcon phase={s.phase} />
                       {s.phase}
                     </span>
-                    <span className="font-mono text-[10px] text-[#8FA0BF] ml-auto">
+                    <span className="font-mono text-[10px] text-muted ml-auto">
                       {fmtPayload((s.payload as Record<string, unknown>)?.step ?? `#${i}`)}
                     </span>
                   </div>
-                  <div className="font-mono text-[11px] text-[#E6EDF7] mt-0.5 break-words">
+                  <div className="font-mono text-[11px] text-text mt-0.5 break-words">
                     {fmtPayload(s.payload)}
                   </div>
                 </div>
@@ -334,7 +492,7 @@ export function ConsolePage() {
                 .map((l, i) => (
                   <div
                     key={`l${i}`}
-                    className="rounded px-2 py-1 border border-dashed border-[#A78BFA]/50 font-mono text-[10px] text-[#A78BFA]"
+                    className="rounded px-2 py-1 border border-dashed border-diff/50 font-mono text-[10px] text-diff"
                   >
                     LIVE ▸ {l.type}: {fmtPayload(l.data).slice(0, 160)}
                   </div>
@@ -346,164 +504,55 @@ export function ConsolePage() {
           )}
         </Panel>
 
-        <div className="w-[28%] flex flex-col gap-3 min-h-0">
-          <Panel title="ACTION PROOF" className="flex-1">
-            {actions.isPending ? (
-              <Loading />
-            ) : actions.isError ? (
-              <ErrorBox message={errMsg(actions.error)} onRetry={() => actions.refetch()} />
-            ) : (actions.data || []).length === 0 ? (
-              <Empty message="No tool actions recorded for this incident." />
-            ) : (
-              <div className="p-2 flex flex-col gap-1.5">
-                {(actions.data || []).map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => setSelectedAction(a.id)}
-                    className={`text-left rounded px-2 py-1.5 border font-mono text-[11px] ${
-                      selectedAction === a.id
-                        ? 'border-[#0E7C86] bg-[#0E7C86]/10'
-                        : 'border-[#22304D] bg-[#16223B] hover:border-[#0E7C86]/50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-[#E6EDF7] font-semibold">
-                        {a.tool}({a.target})
-                      </span>
-                      <span className="ml-auto">
-                        <RiskBadge tier={a.risk_tier} score={a.risk_score} />
-                      </span>
-                    </div>
-                    <div className="text-[#8FA0BF] text-[10px] mt-0.5">
-                      {a.approval_status} · {a.result}
-                      {a.undone ? ' · UNDONE' : ''}
-                    </div>
-                  </button>
-                ))}
-                {selectedAction &&
-                  (proof.isPending ? (
-                    <Loading message="Loading proof…" />
-                  ) : proof.isError ? (
-                    <ErrorBox message={errMsg(proof.error)} onRetry={() => proof.refetch()} />
-                  ) : (
-                    proof.data && (
-                      <div className="rounded border border-[#22304D] bg-[#0B1220] p-2">
-                        <KV k="ACTION" v={proof.data.action} />
-                        <KV k="TARGET" v={proof.data.target} />
-                        <KV k="REASON" v={proof.data.reason} mono={false} />
-                        <KV k="RISK" v={proof.data.risk} />
-                        <KV
-                          k="FACTORS"
-                          v={`crit ${proof.data.criticality} · blast ${proof.data.blast} · irrev ${proof.data.irreversibility} · unc ${proof.data.uncertainty}`}
-                        />
-                        <KV k="DRY-RUN" v={proof.data.dry_run} mono={false} />
-                        <KV k="APPROVAL" v={proof.data.approval} />
-                        <KV k="REVERSIBLE" v={proof.data.reversible ? 'YES' : 'NO'} />
-                        <KV k="RESULT" v={proof.data.result} />
-                        <KV k="LOG HASH" v={String(proof.data.log_hash).slice(0, 20) + '…'} />
-                        <KV k="PREV HASH" v={String(proof.data.previous_hash).slice(0, 20) + '…'} />
-                        {canAct && (
-                          <UndoButton
-                            actionId={selectedAction}
-                            onUndo={() => undo.mutate(selectedAction)}
-                            busy={undo.isPending}
-                          />
-                        )}
-                      </div>
-                    )
-                  ))}
-              </div>
-            )}
-          </Panel>
-
-          <Panel
-            title="HUMAN APPROVAL"
-            className="max-h-[42%]"
-            right={
-              pendingApproval.length > 0 ? (
-                <span className="font-mono text-[10px] font-bold text-[#F59E0B]">
-                  {pendingApproval.length} PENDING
-                </span>
-              ) : undefined
-            }
-          >
-            <div className="p-2 flex flex-col gap-1.5">
-              {pendingApproval.length === 0 ? (
-                <Empty message="No actions awaiting approval." />
-              ) : (
-                pendingApproval.map((a) => (
-                  <div
-                    key={a.id}
-                    className="rounded border border-[#F59E0B]/50 bg-[#F59E0B]/5 p-2"
-                  >
-                    <div className="font-mono text-[11px] font-bold text-[#F59E0B]">
-                      HIGH-RISK ACTION
-                    </div>
-                    <KV k="TOOL" v={`${a.tool}(${a.target})`} />
-                    <KV k="REASON" v={a.reason} mono={false} />
-                    <div className="py-1">
-                      <RiskBadge tier={a.risk_tier} score={a.risk_score} />
-                    </div>
-                    {!canApprove ? (
-                      <div className="font-mono text-[10px] text-[#8FA0BF]">
-                        Requires approver role. Current role cannot decide.
-                      </div>
-                    ) : (
-                      <div className="flex gap-2 mt-1">
-                        <button
-                          onClick={() => approve.mutate(a.id)}
-                          disabled={approve.isPending || deny.isPending}
-                          className="flex-1 rounded bg-[#22C55E] hover:brightness-110 disabled:opacity-50 text-black font-mono text-[11px] font-bold px-2 py-1.5"
-                        >
-                          APPROVE
-                        </button>
-                        <button
-                          onClick={() => deny.mutate(a.id)}
-                          disabled={approve.isPending || deny.isPending}
-                          className="flex-1 rounded bg-[#EF4444] hover:brightness-110 disabled:opacity-50 text-white font-mono text-[11px] font-bold px-2 py-1.5"
-                        >
-                          DENY
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </Panel>
+        {/* Right column: pending approvals pin to the top (DESIGN.md §4). */}
+        <div className="w-[28%] flex flex-col gap-3 min-h-0 overflow-y-auto" aria-live="polite">
+          {pendingApproval.length > 0 ? (
+            <>
+              <div className="shrink-0">{approvalPanel}</div>
+              {proofPanel}
+            </>
+          ) : (
+            <>
+              {proofPanel}
+              <div className="shrink-0 max-h-[42%] overflow-y-auto">{approvalPanel}</div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Bottom: attack paths + verification */}
-      <div className="shrink-0 border-t border-[#22304D] bg-[#111A2E] px-3 py-2 flex gap-4 items-start overflow-x-auto">
+      <div className="shrink-0 border-t border-border bg-surface px-3 py-2 flex gap-4 items-start overflow-x-auto">
         <div className="min-w-[280px]">
-          <div className="font-mono text-[10px] tracking-[0.14em] text-[#8FA0BF] font-semibold mb-1">
-            CURRENT ATTACK PATHS
+          <div className="font-mono text-[10px] tracking-[0.14em] text-muted font-semibold mb-1">
+            CURRENT ATTACK PATHS{' '}
+            {paths.data && (
+              <PathStatusBadge status={paths.data.status} count={paths.data.paths.length} />
+            )}
           </div>
           {paths.isPending ? (
-            <span className="font-mono text-[11px] text-[#8FA0BF]">loading…</span>
+            <span className="font-mono text-[11px] text-muted">loading…</span>
           ) : paths.isError ? (
-            <span className="font-mono text-[11px] text-[#EF4444]">{errMsg(paths.error)}</span>
+            <span className="font-mono text-[11px] text-danger">{errMsg(paths.error)}</span>
           ) : (paths.data?.paths || []).length === 0 ? (
-            <span className="font-mono text-[12px] font-bold text-[#22C55E]">
+            <span className="font-mono text-[12px] font-bold text-success">
               ZERO ACTIVE PATHS — CONTAINMENT HOLDS
             </span>
           ) : (
             <div className="flex flex-col gap-1">
               {(paths.data?.paths || []).map((p, i) => (
-                <span key={i} className="font-mono text-[11px] text-[#EF4444]">
+                <span key={i} className="font-mono text-[11px] text-danger">
                   ACTIVE ▸ {p.nodes.join(' → ')}
                 </span>
               ))}
             </div>
           )}
         </div>
-        <div className="min-w-[280px]">
-          <div className="font-mono text-[10px] tracking-[0.14em] text-[#8FA0BF] font-semibold mb-1">
+        <div className="min-w-[280px]" aria-live="polite">
+          <div className="font-mono text-[10px] tracking-[0.14em] text-muted font-semibold mb-1">
             GROUND-TRUTH VERIFICATION
           </div>
           {verifications.length === 0 ? (
-            <span className="font-mono text-[11px] text-[#8FA0BF]">no verification recorded</span>
+            <span className="font-mono text-[11px] text-muted">no verification recorded</span>
           ) : (
             <div className="flex flex-col gap-1">
               {verifications.slice(-3).map((v, i) => {
@@ -513,7 +562,7 @@ export function ConsolePage() {
                 return (
                   <span
                     key={i}
-                    className={`font-mono text-[11px] ${contained ? 'text-[#22C55E]' : 'text-[#EF4444]'}`}
+                    className={`font-mono text-[11px] ${contained ? 'text-success' : 'text-danger'}`}
                   >
                     {contained
                       ? 'VERIFIED: zero reachable paths — CONTAINED'
@@ -525,15 +574,15 @@ export function ConsolePage() {
           )}
         </div>
         <div className="min-w-[280px]">
-          <div className="font-mono text-[10px] tracking-[0.14em] text-[#8FA0BF] font-semibold mb-1">
+          <div className="font-mono text-[10px] tracking-[0.14em] text-muted font-semibold mb-1">
             ADVERSARY (REACTIVE)
           </div>
           {adversaryMoves.length === 0 ? (
-            <span className="font-mono text-[11px] text-[#8FA0BF]">no adversary moves recorded</span>
+            <span className="font-mono text-[11px] text-muted">no adversary moves recorded</span>
           ) : (
             <div className="flex flex-col gap-1">
               {adversaryMoves.slice(-3).map((a, i) => (
-                <span key={i} className="font-mono text-[11px] text-[#A78BFA]">
+                <span key={i} className="font-mono text-[11px] text-diff">
                   {(a.payload as Record<string, unknown>)?.mitre as string} ▸{' '}
                   {fmtPayload((a.payload as Record<string, unknown>)?.detail).slice(0, 120)}
                 </span>
@@ -542,6 +591,91 @@ export function ConsolePage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PathStatusBadge({ status, count }: { status: string; count: number }) {
+  const cls =
+    status === 'SAFE'
+      ? 'text-success border-success/40 bg-success/15'
+      : status === 'BLOCKED'
+        ? 'text-warning border-warning/40 bg-warning/15'
+        : 'text-danger border-danger/40 bg-danger/15';
+  return (
+    <span className={`font-mono text-[10px] font-bold border rounded px-1.5 py-0.5 ${cls}`}>
+      {status} · {count}
+    </span>
+  );
+}
+
+function ApprovalCard({
+  action,
+  canApprove,
+  reason,
+  onReason,
+  onApprove,
+  onDeny,
+  busy,
+}: {
+  action: ActionItem;
+  canApprove: boolean;
+  reason: string;
+  onReason: (v: string) => void;
+  onApprove: () => void;
+  onDeny: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div
+      className="rounded border border-warning/50 bg-warning/5 p-2"
+      tabIndex={0}
+      title="Keyboard: A approve · D deny (when focused)"
+      onKeyDown={(e) => {
+        if (!canApprove || busy) return;
+        if (e.key === 'a' || e.key === 'A') onApprove();
+        if ((e.key === 'd' || e.key === 'D') && reason.trim()) onDeny();
+      }}
+    >
+      <div className="font-mono text-[11px] font-bold text-warning">HIGH-RISK ACTION</div>
+      <KV k="TOOL" v={`${action.tool}(${action.target})`} />
+      <KV k="REASON" v={action.reason} mono={false} />
+      <div className="py-1">
+        <RiskBadge tier={action.risk_tier} score={action.risk_score} />
+      </div>
+      {!canApprove ? (
+        <div className="font-mono text-[10px] text-muted">
+          Requires approver role. Current role cannot decide.
+        </div>
+      ) : (
+        <>
+          <input
+            value={reason}
+            onChange={(e) => onReason(e.target.value)}
+            placeholder="Deny reason (required to deny)…"
+            maxLength={500}
+            className="w-full mt-1 bg-bg border border-border rounded px-2 py-1.5 text-[11px] font-mono text-text outline-none focus:border-primary"
+          />
+          <div className="flex gap-2 mt-1.5">
+            <button
+              onClick={onApprove}
+              disabled={busy}
+              title="Approve (A)"
+              className="flex-1 rounded bg-success hover:brightness-110 disabled:opacity-50 text-black font-mono text-[11px] font-bold px-2 py-1.5"
+            >
+              APPROVE
+            </button>
+            <button
+              onClick={onDeny}
+              disabled={busy || !reason.trim()}
+              title={reason.trim() ? 'Deny (D)' : 'Enter a deny reason first'}
+              className="flex-1 rounded bg-danger hover:brightness-110 disabled:opacity-50 text-white font-mono text-[11px] font-bold px-2 py-1.5"
+            >
+              DENY
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -557,23 +691,23 @@ function TimelineRow({
 }) {
   const color =
     event === 'incident.replanned' || event === 'graph.diff'
-      ? 'text-[#A78BFA]'
+      ? 'text-diff'
       : event === 'verification.completed'
-        ? 'text-[#22C55E]'
+        ? 'text-success'
         : event === 'adversary.action'
-          ? 'text-[#F59E0B]'
+          ? 'text-warning'
           : event === 'action.executed'
-            ? 'text-[#3B82F6]'
+            ? 'text-info'
             : event === 'injection.flagged'
-              ? 'text-[#EF4444]'
-              : 'text-[#8FA0BF]';
+              ? 'text-danger'
+              : 'text-muted';
   return (
-    <div className="rounded px-2 py-1.5 bg-[#0B1220] border border-[#22304D]/70">
+    <div className="timeline-in rounded px-2 py-1.5 bg-bg border border-border/70">
       <div className="flex items-center gap-2">
         <span className={`font-mono text-[10px] font-bold tracking-wider ${color}`}>{event}</span>
-        <span className="font-mono text-[10px] text-[#8FA0BF] ml-auto">{actor}</span>
+        <span className="font-mono text-[10px] text-muted ml-auto">{actor}</span>
       </div>
-      <div className="font-mono text-[10px] text-[#8FA0BF] mt-0.5 break-words">
+      <div className="font-mono text-[10px] text-muted mt-0.5 break-words">
         {fmtPayload(payload).slice(0, 300)}
       </div>
     </div>
@@ -594,7 +728,7 @@ function UndoButton({
       onClick={onUndo}
       disabled={busy}
       title={actionId}
-      className="mt-2 w-full font-mono text-[11px] px-2 py-1.5 rounded bg-[#16223B] border border-[#22304D] hover:bg-[#1f3054] disabled:opacity-50"
+      className="mt-2 w-full font-mono text-[11px] px-2 py-1.5 rounded bg-surface-2 border border-border hover:brightness-125 disabled:opacity-50"
     >
       {busy ? 'UNDOING…' : 'UNDO THIS ACTION'}
     </button>

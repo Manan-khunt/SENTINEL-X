@@ -29,9 +29,11 @@ tested against the live implementation.
 | Action listing | `/api/incidents/{id}/actions` | GET | Bearer | — | `ActionOut[]` (`{id, tool, target, reason, reversible, risk_score, risk_tier, approval_status, result, undo_of, undone, created_at}`) | viewer+ | error → ErrorBox | PASS |
 | Action proof | `/api/incidents/{id}/proof/{action_id}` | GET | Bearer | — | `ActionProof` (`{incident, agent, threat, target, action, reason, risk, criticality, blast, irreversibility, uncertainty, dry_run, approval, reversible, undo, result, log_hash, previous_hash}`) | viewer+ | 404 → ErrorBox | PASS |
 | Action approve | `/api/actions/{action_id}/approve` | POST | Bearer | — | `{status: "approved", action}` | approver+ | 403 for analyst; 400/404 on stale approval → error text | PASS |
-| Action deny | `/api/actions/{action_id}/deny` | POST | Bearer | — | `{status: "denied", action}` | approver+ | 403 for analyst → error text | PASS |
+| Action deny | `/api/actions/{action_id}/deny` | POST | Bearer | optional `{"reason": str}` (≤500 chars, recorded in `action.denied` audit payload) | `{status: "denied", action}` | approver+ | 403 for analyst → error text | PASS |
 | Action undo | `/api/actions/{action_id}/undo` | POST | Bearer | — | `{status: "undone", action}` | analyst+ (HIGH-risk undo requires approver/admin) | 400 "not reversible or already undone"; 403 high-risk → error text | PASS |
 | Step incident | `/api/incidents/{id}/step` | POST | Bearer | — | `IncidentOut` | analyst+ | 404 → error text; runs one agent cycle | PASS |
+| Agent trace | `/api/incidents/{id}/agent-trace` | GET | Bearer | — | `{incident_id, final_status, contained, containment_note, replans, observation, planning, dry_run, risk_assessment, policy_decision, tool_execution, verification, replanning, actions: {proposed, approved, executed, verified_outcomes}}` | viewer+ | error → ErrorBox | PASS |
+| Detailed diagnostics | `/api/health/detailed` | GET | none | — | `{status: healthy\|degraded\|unavailable, version, checks: {api, database, agent, environment_simulator, event_streaming}}` | — | non-destructive checks only; no secrets | PASS |
 | Replay material | `/api/incidents/{id}/replay` | GET | Bearer | — | `{incident_id, events: [{id, event, hash, previous_hash}]}` | viewer+ | error → ErrorBox | PASS |
 | Shadow/Enforce mode | `/api/system/mode` | GET/POST | Bearer | POST `{mode: "ENFORCE"\|"SHADOW"}` | `{mode}` | GET viewer+; POST admin only | 403 for non-admin → control hidden + server enforcement | PASS |
 | Kill switch | `/api/system/kill-switch` | POST | Bearer | — | `{status: "HALTED"}` | approver+ | 403 for analyst → hidden; writes audit `system.halted` | PASS |
@@ -82,6 +84,18 @@ Startup:
 ```
 cd backend && python -m uvicorn app.main:app --port 8000
 cd frontend && npm run dev          # http://localhost:5173
+```
+
+Tables and demo seed data are created on startup AND guaranteed at first
+database use (`get_session_factory` first-use gate), so a fresh checkout
+serves a healthy API with zero manual steps.
+
+Resetting demo state: delete the database AND the audit anchor file together
+— deleting only the DB leaves stale anchors, and `/api/audit/verify` will
+honestly report `BROKEN_AT_ANCHOR_*` (tamper-evidence working as designed):
+```
+# from backend/
+rm ./sentinelx.db* ./audit_anchors.jsonl   # recreated + reseeded on next use
 ```
 
 Production: `docker compose up --build` serves backend on :8000 and the

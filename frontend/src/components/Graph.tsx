@@ -4,34 +4,34 @@
 import { useEffect, useRef } from 'react';
 import cytoscape from 'cytoscape';
 import type { GraphDiffPayload, GraphSnapshot } from '../types';
-
-const TYPE_COLOR: Record<string, string> = {
-  user: '#3B82F6',
-  device: '#0E7C86',
-  server: '#0E7C86',
-  credential: '#F59E0B',
-  service_token: '#A78BFA',
-  service: '#8FA0BF',
-  database: '#22C55E',
-};
+import { TOK, TYPE_COLOR } from '../lib/tokens';
 
 function edgeKey(e: { src: string; dst: string }) {
   return `${e.src}>>${e.dst}`;
 }
+
+const reducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function AttackGraph({
   snapshot,
   activeNodes,
   diff,
   height,
+  foothold,
 }: {
   snapshot: GraphSnapshot;
   activeNodes: Set<string>;
   diff: GraphDiffPayload | null;
   height: string;
+  /** Attacker's current foothold (first node of the first active path). */
+  foothold?: string | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
+  const prevVersion = useRef<number>(snapshot.version);
 
   const diffNodes = new Set<string>([
     ...(diff?.new_nodes || []),
@@ -48,16 +48,19 @@ export function AttackGraph({
       cyRef.current.destroy();
       cyRef.current = null;
     }
+    const versionChanged = prevVersion.current !== snapshot.version;
+    prevVersion.current = snapshot.version;
     const elements: cytoscape.ElementDefinition[] = [
       ...snapshot.nodes.map((n) => ({
         data: {
           id: n.id,
           label: n.id,
           type: n.type,
-          color: TYPE_COLOR[n.type] || '#8FA0BF',
+          color: TYPE_COLOR[n.type] || TOK.muted,
           protected: !!n.protected,
           active: activeNodes.has(n.id),
           isDiff: diffNodes.has(n.id),
+          isFoothold: foothold === n.id,
         },
       })),
       ...snapshot.edges.map((e) => ({
@@ -80,12 +83,12 @@ export function AttackGraph({
           selector: 'node',
           style: {
             label: 'data(label)',
-            color: '#E6EDF7',
+            color: TOK.text,
             'font-size': 9,
             'font-family': 'JetBrains Mono, monospace',
             'background-color': 'data(color)',
             'border-width': 2,
-            'border-color': '#22304D',
+            'border-color': TOK.border,
             width: 26,
             height: 26,
             'text-valign': 'bottom',
@@ -94,13 +97,17 @@ export function AttackGraph({
         },
         {
           selector: 'node[active = 1]',
-          style: { 'border-color': '#EF4444', 'border-width': 3 },
+          style: { 'border-color': TOK.danger, 'border-width': 3 },
         },
         {
+          // Protected crown-jewel asset: diamond + double border + lock label.
           selector: 'node[protected = 1]',
           style: {
-            'border-color': '#F59E0B',
+            'border-color': TOK.warning,
             'border-width': 3,
+            'outline-width': 1.5,
+            'outline-color': TOK.warning,
+            'outline-style': 'solid',
             shape: 'diamond',
             width: 32,
             height: 32,
@@ -108,18 +115,28 @@ export function AttackGraph({
         },
         {
           selector: 'node[isDiff = 1]',
-          style: { 'border-color': '#A78BFA', 'border-width': 4 },
+          style: { 'border-color': TOK.diff, 'border-width': 4 },
+        },
+        {
+          // Attacker's current foothold: danger fill ring under the node.
+          selector: 'node[isFoothold = 1]',
+          style: {
+            'underlay-color': TOK.danger,
+            'underlay-opacity': 0.35,
+            'underlay-padding': 6,
+            'underlay-shape': 'ellipse',
+          },
         },
         {
           selector: 'edge',
           style: {
             width: 1.5,
-            'line-color': '#22304D',
-            'target-arrow-color': '#22304D',
+            'line-color': TOK.border,
+            'target-arrow-color': TOK.border,
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
             label: 'data(kind)',
-            color: '#8FA0BF',
+            color: TOK.muted,
             'font-size': 8,
             'font-family': 'JetBrains Mono, monospace',
           },
@@ -127,16 +144,16 @@ export function AttackGraph({
         {
           selector: 'edge[active = 1]',
           style: {
-            'line-color': '#EF4444',
-            'target-arrow-color': '#EF4444',
+            'line-color': TOK.danger,
+            'target-arrow-color': TOK.danger,
             width: 2.5,
           },
         },
         {
           selector: 'edge[isDiff = 1]',
           style: {
-            'line-color': '#A78BFA',
-            'target-arrow-color': '#A78BFA',
+            'line-color': TOK.diff,
+            'target-arrow-color': TOK.diff,
             width: 3,
             'line-style': 'dashed',
           },
@@ -144,29 +161,44 @@ export function AttackGraph({
       ],
     });
     cyRef.current = cy;
+    if (!reducedMotion()) {
+      // Settle the new layout, then pulse newly discovered edges once
+      // (DESIGN.md §7: one pulse, never perpetual).
+      cy.fit(undefined, 24);
+      if (versionChanged && diffEdges.size > 0) {
+        const fresh = cy.edges().filter((e) => diffEdges.has(edgeKey(e.data())));
+        fresh.style({ opacity: 0.25 });
+        fresh.animate({ style: { opacity: 1 } }, { duration: 600 });
+      }
+    }
     return () => {
       cy.destroy();
       cyRef.current = null;
     };
     // Rebuild when snapshot version or diff changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot.version, JSON.stringify(snapshot.nodes), JSON.stringify(snapshot.edges), JSON.stringify(diff)]);
+  }, [snapshot.version, JSON.stringify(snapshot.nodes), JSON.stringify(snapshot.edges), JSON.stringify(diff), foothold]);
 
   return (
     <div className="relative w-full" style={{ height }}>
       <div ref={ref} className="cytoscape-container absolute inset-0" />
-      <div className="absolute top-2 left-2 flex flex-wrap gap-1.5 font-mono text-[10px] text-[#8FA0BF]">
-        <span className="px-1.5 py-0.5 rounded bg-[#0B1220]/90 border border-[#22304D]">
-          <span className="text-[#EF4444]">━</span> ACTIVE PATH
+      <div className="absolute top-2 left-2 flex flex-wrap gap-1.5 font-mono text-[10px] text-muted">
+        <span className="px-1.5 py-0.5 rounded bg-bg/90 border border-border">
+          <span className="text-danger">━</span> ACTIVE PATH
         </span>
-        <span className="px-1.5 py-0.5 rounded bg-[#0B1220]/90 border border-[#22304D]">
-          <span className="text-[#A78BFA]">┄</span> NEW / DIFF
+        <span className="px-1.5 py-0.5 rounded bg-bg/90 border border-border">
+          <span className="text-diff">┄</span> NEW / DIFF
         </span>
-        <span className="px-1.5 py-0.5 rounded bg-[#0B1220]/90 border border-[#22304D]">
-          <span className="text-[#F59E0B]">◆</span> PROTECTED
+        <span className="px-1.5 py-0.5 rounded bg-bg/90 border border-border">
+          <span className="text-warning">◆</span> PROTECTED
         </span>
+        {foothold && (
+          <span className="px-1.5 py-0.5 rounded bg-bg/90 border border-border">
+            <span className="text-danger">◉</span> FOOTHOLD: {foothold}
+          </span>
+        )}
       </div>
-      <div className="absolute bottom-2 right-2 font-mono text-[10px] text-[#8FA0BF] px-1.5 py-0.5 rounded bg-[#0B1220]/90 border border-[#22304D]">
+      <div className="absolute bottom-2 right-2 font-mono text-[10px] text-muted px-1.5 py-0.5 rounded bg-bg/90 border border-border">
         v{snapshot.version} · {snapshot.nodes.length} nodes · {snapshot.edges.length} edges
       </div>
     </div>

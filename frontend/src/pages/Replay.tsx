@@ -38,11 +38,11 @@ export function ReplayPage() {
             value={id}
             onChange={(e) => setId(e.target.value)}
             placeholder="INC-1043"
-            className="flex-1 bg-[#16223B] border border-[#22304D] rounded px-2 py-2 text-xs font-mono text-[#E6EDF7] outline-none"
+            className="flex-1 bg-surface-2 border border-border rounded px-2 py-2 text-xs font-mono text-text outline-none"
           />
           <button
             type="submit"
-            className="rounded bg-[#0E7C86] hover:bg-[#12929E] text-white font-mono text-[11px] font-semibold px-3"
+            className="rounded bg-primary hover:bg-primary-hover text-white font-mono text-[11px] font-semibold px-3"
           >
             LOAD
           </button>
@@ -50,9 +50,9 @@ export function ReplayPage() {
         {!active && <Empty message="Enter a completed incident ID to replay its record." />}
         {incident.data && (
           <div className="px-3 pb-3 font-mono text-[11px] flex flex-col gap-1">
-            <span className="text-[#E6EDF7] font-bold">{incident.data.id}</span>
+            <span className="text-text font-bold">{incident.data.id}</span>
             <StatusBadge status={incident.data.status} />
-            <span className="text-[#8FA0BF]">
+            <span className="text-muted">
               {incident.data.scenario} · seed {incident.data.seed} · replans{' '}
               {incident.data.replans}
             </span>
@@ -71,11 +71,11 @@ export function ReplayPage() {
             {replay.data.events.map((e) => (
               <div
                 key={e.id}
-                className="font-mono text-[11px] px-2 py-1 rounded bg-[#0B1220] border border-[#22304D]/70 flex gap-2"
+                className="font-mono text-[11px] px-2 py-1 rounded bg-bg border border-border/70 flex gap-2"
               >
-                <span className="text-[#8FA0BF]">#{e.id}</span>
-                <span className="text-[#E6EDF7]">{e.event}</span>
-                <span className="text-[#8FA0BF] ml-auto truncate">
+                <span className="text-muted">#{e.id}</span>
+                <span className="text-text">{e.event}</span>
+                <span className="text-muted ml-auto truncate">
                   {e.hash.slice(0, 16)}…
                 </span>
               </div>
@@ -95,11 +95,11 @@ export function ReplayPage() {
             {(timeline.data?.events || []).map((e, i) => (
               <div
                 key={i}
-                className="font-mono text-[11px] px-2 py-1 rounded bg-[#0B1220] border border-[#22304D]/70"
+                className="font-mono text-[11px] px-2 py-1 rounded bg-bg border border-border/70"
               >
-                <span className="text-[#0E7C86] font-bold">{e.event}</span>{' '}
-                <span className="text-[#8FA0BF]">{e.actor}</span>
-                <div className="text-[#8FA0BF] break-words">
+                <span className="text-primary font-bold">{e.event}</span>{' '}
+                <span className="text-muted">{e.actor}</span>
+                <div className="text-muted break-words">
                   {JSON.stringify(e.payload).slice(0, 280)}
                 </div>
               </div>

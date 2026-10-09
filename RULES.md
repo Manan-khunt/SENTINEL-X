@@ -92,6 +92,8 @@ Format: `D-NNN · date · decision · reason · alternatives rejected · affects
 | D-012 | Deployment: Docker Compose on one machine | No cloud dependency for the demo | Cloud deploy | Deployment |
 | D-013 | Adversary tactics fixed before agent built; mapped to MITRE ATT&CK T1078, T1528, T1021, T1098 | Prevents tuning the benchmark to the agent | Ad-hoc tactics | `adversary.py` |
 | D-014 | Contracts (Pydantic schemas) frozen at end of Phase 1 | Enables parallel work and avoids drift | Evolving schemas | All |
+| D-015 | `POST /actions/{id}/deny` accepts optional `{"reason"}` (≤500 chars, in `action.denied` audit payload); no-body calls unchanged | DESIGN.md requires a deny reason; additive optional field keeps all existing clients/tests green | Required body (would 422 old clients), separate endpoint | `api/incidents.py`, `agent/orchestrator.py`, `frontend/src/api.ts` |
+| D-016 | DB tables + demo seed guaranteed at first `get_session_factory()` use, in addition to lifespan | Fresh `uvicorn` serve returned 500s (`no such table`) when the server skipped lifespan; first-use gate is idempotent and server-independent | Lifespan-only init (breaks fresh starts on lifespan-less servers) | `db/session.py` |
 
 ### Pending decisions (resolve before the phase that needs them)
 

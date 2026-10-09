@@ -1,5 +1,12 @@
 # TASK: Current Working Memory
 
+> **RESYNC 2026-10-09:** Phase 0 below is STALE (written before implementation).
+> Actual state: full backend (FastAPI + agent loop + gateway + audit + SSE +
+> benchmark + 60 pytest tests green), full frontend (7 pages + Cytoscape graph +
+> SSE store + vitest 8/8 green), Docker configs, live E2E 18/18 PASS on
+> 2026-10-09. Do not treat the unticked Phase 0 boxes as current progress —
+> see the session completion report for verified status.
+
 > **Disposable file.** Overwrite it at the start of each session or phase. It holds only what the AI needs *right now*. Anything permanent belongs in `RULES.md` (decisions) or `IMPLEMENTATION_PLAN.md` (progress).
 
 ---

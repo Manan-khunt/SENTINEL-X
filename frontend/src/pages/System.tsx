@@ -80,7 +80,7 @@ export function SystemPage() {
             <>
               <KV k="STATUS" v={status.data!.status} />
               <KV k="MODE" v={mode.data!.mode} />
-              <div className="text-[11px] text-[#8FA0BF]">
+              <div className="text-[11px] text-muted">
                 Synthetic enterprise environment · in-process orchestration · SQLite · SSE
               </div>
               {canMode && (
@@ -90,7 +90,7 @@ export function SystemPage() {
                       key={m}
                       disabled={setMode.isPending || mode.data!.mode === m}
                       onClick={() => setMode.mutate(m)}
-                      className="flex-1 font-mono text-[11px] px-2 py-1.5 rounded bg-[#16223B] border border-[#22304D] hover:bg-[#1f3054] disabled:opacity-50"
+                      className="flex-1 font-mono text-[11px] px-2 py-1.5 rounded bg-surface-2 border border-border hover:brightness-125 disabled:opacity-50"
                     >
                       SET {m}
                     </button>
@@ -102,24 +102,24 @@ export function SystemPage() {
                   <button
                     disabled={kill.isPending}
                     onClick={() => kill.mutate()}
-                    className="flex-1 rounded bg-[#EF4444] hover:brightness-110 disabled:opacity-50 text-white font-mono text-[11px] font-bold px-2 py-2"
+                    className="flex-1 rounded bg-danger hover:brightness-110 disabled:opacity-50 text-white font-mono text-[11px] font-bold px-2 py-2"
                   >
                     KILL SWITCH (HALT)
                   </button>
                   <button
                     disabled={resume.isPending}
                     onClick={() => resume.mutate()}
-                    className="flex-1 rounded bg-[#22C55E] hover:brightness-110 disabled:opacity-50 text-black font-mono text-[11px] font-bold px-2 py-2"
+                    className="flex-1 rounded bg-success hover:brightness-110 disabled:opacity-50 text-black font-mono text-[11px] font-bold px-2 py-2"
                   >
                     RESUME
                   </button>
                 </div>
               ) : (
-                <div className="font-mono text-[10px] text-[#8FA0BF]">
+                <div className="font-mono text-[10px] text-muted">
                   Kill switch requires approver role or higher.
                 </div>
               )}
-              {msg && <div className="font-mono text-[11px] text-[#E6EDF7]">{msg}</div>}
+              {msg && <div className="font-mono text-[11px] text-text">{msg}</div>}
             </>
           )}
         </div>

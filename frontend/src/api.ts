@@ -132,9 +132,10 @@ export const api = {
       method: 'POST',
     });
   },
-  deny(actionId: string) {
+  deny(actionId: string, reason?: string) {
     return request<{ status: string; action: string }>(`/actions/${actionId}/deny`, {
       method: 'POST',
+      body: JSON.stringify({ reason: reason || '' }),
     });
   },
   undo(actionId: string) {

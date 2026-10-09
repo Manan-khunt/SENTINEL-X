@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api';
 import { useAuth } from '../auth';
+import { useToasts } from '../components/Toasts';
 import { Empty, ErrorBox, Loading, Panel, errMsg } from '../components/ui';
 import { roleAtLeast } from '../types';
 
@@ -20,11 +21,16 @@ const TARGETS: [string, string][] = [
 
 export function EvaluationPage() {
   const { user } = useAuth();
+  const toast = useToasts();
   const qc = useQueryClient();
   const batches = useQuery({ queryKey: ['benchmarks'], queryFn: api.benchmarks });
   const run = useMutation({
     mutationFn: api.runBenchmark,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['benchmarks'] }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['benchmarks'] });
+      toast.push('success', `Benchmark batch done — ${r.batch_id}`);
+    },
+    onError: (e) => toast.push('error', 'Benchmark failed', errMsg(e)),
   });
 
   return (
@@ -37,7 +43,7 @@ export function EvaluationPage() {
             <button
               onClick={() => run.mutate()}
               disabled={run.isPending}
-              className="font-mono text-[11px] px-2 py-1 rounded bg-[#0E7C86] hover:bg-[#12929E] disabled:opacity-50 text-white font-semibold"
+              className="font-mono text-[11px] px-2 py-1 rounded bg-primary hover:bg-primary-hover disabled:opacity-50 text-white font-semibold"
             >
               {run.isPending ? 'RUNNING…' : 'RUN BENCHMARK'}
             </button>
@@ -55,21 +61,21 @@ export function EvaluationPage() {
             {batches.data.map((b) => (
               <div key={b.batch_id} className="soc-panel-sub rounded p-2">
                 <div className="flex items-center gap-3 font-mono text-[11px]">
-                  <span className="text-[#E6EDF7] font-bold">{b.batch_id}</span>
-                  <span className="text-[#8FA0BF]">{b.status}</span>
+                  <span className="text-text font-bold">{b.batch_id}</span>
+                  <span className="text-muted">{b.status}</span>
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 mt-2">
                   {Object.entries(b.metrics || {}).map(([cfg, m]) => (
-                    <div key={cfg} className="rounded border border-[#22304D] bg-[#0B1220] p-1.5">
-                      <div className="font-mono text-[11px] font-bold text-[#0E7C86]">{cfg}</div>
-                      <pre className="font-mono text-[10px] text-[#8FA0BF] whitespace-pre-wrap break-words">
+                    <div key={cfg} className="rounded border border-border bg-bg p-1.5">
+                      <div className="font-mono text-[11px] font-bold text-primary">{cfg}</div>
+                      <pre className="font-mono text-[10px] text-muted whitespace-pre-wrap break-words">
                         {JSON.stringify(m, null, 1).slice(0, 900)}
                       </pre>
                     </div>
                   ))}
                 </div>
                 {b.comparison && Object.keys(b.comparison).length > 0 && (
-                  <pre className="font-mono text-[10px] text-[#8FA0BF] mt-1.5 whitespace-pre-wrap">
+                  <pre className="font-mono text-[10px] text-muted mt-1.5 whitespace-pre-wrap">
                     comparison: {JSON.stringify(b.comparison, null, 1).slice(0, 1200)}
                   </pre>
                 )}
@@ -82,8 +88,8 @@ export function EvaluationPage() {
         <div className="p-2 flex flex-col gap-1.5">
           {TARGETS.map(([k, v]) => (
             <div key={k} className="font-mono text-[11px]">
-              <div className="text-[#E6EDF7]">{k}</div>
-              <div className="text-[#8FA0BF]">{v}</div>
+              <div className="text-text">{k}</div>
+              <div className="text-muted">{v}</div>
             </div>
           ))}
         </div>

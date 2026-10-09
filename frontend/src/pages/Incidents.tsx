@@ -38,7 +38,7 @@ export function IncidentsPage() {
         title="INCIDENTS"
         className="flex-1"
         right={
-          <span className="font-mono text-[10px] text-[#8FA0BF]">
+          <span className="font-mono text-[10px] text-muted">
             {incidents.data ? `${incidents.data.length} total` : ''}
           </span>
         }
@@ -52,7 +52,7 @@ export function IncidentsPage() {
         ) : (
           <table className="w-full text-xs">
             <thead>
-              <tr className="font-mono text-[10px] text-[#8FA0BF] tracking-wider text-left border-b border-[#22304D]">
+              <tr className="font-mono text-[10px] text-muted tracking-wider text-left border-b border-border">
                 <th className="px-3 py-2">ID</th>
                 <th className="px-3 py-2">SCENARIO</th>
                 <th className="px-3 py-2">STATUS</th>
@@ -63,19 +63,19 @@ export function IncidentsPage() {
             </thead>
             <tbody>
               {incidents.data.map((i) => (
-                <tr key={i.id} className="border-b border-[#22304D]/50 hover:bg-[#16223B]">
+                <tr key={i.id} className="border-b border-border/50 hover:bg-surface-2">
                   <td className="px-3 py-2 font-mono">
-                    <Link to={`/incidents/${i.id}`} className="text-[#0E7C86] hover:underline">
+                    <Link to={`/incidents/${i.id}`} className="text-primary hover:underline">
                       {i.id}
                     </Link>
                   </td>
-                  <td className="px-3 py-2 font-mono text-[#E6EDF7]">{i.scenario}</td>
+                  <td className="px-3 py-2 font-mono text-text">{i.scenario}</td>
                   <td className="px-3 py-2">
                     <StatusBadge status={i.status} />
                   </td>
-                  <td className="px-3 py-2 font-mono text-[#8FA0BF]">{i.simulation_step}</td>
-                  <td className="px-3 py-2 font-mono text-[#8FA0BF]">{i.replans}</td>
-                  <td className="px-3 py-2 font-mono text-[#8FA0BF]">{i.mode}</td>
+                  <td className="px-3 py-2 font-mono text-muted">{i.simulation_step}</td>
+                  <td className="px-3 py-2 font-mono text-muted">{i.replans}</td>
+                  <td className="px-3 py-2 font-mono text-muted">{i.mode}</td>
                 </tr>
               ))}
             </tbody>
@@ -86,17 +86,17 @@ export function IncidentsPage() {
       <Panel title="NEW INCIDENT" className="w-[320px] shrink-0">
         <div className="p-3 flex flex-col gap-3">
           {!canCreate && (
-            <div className="font-mono text-[11px] text-[#F59E0B]">
+            <div className="font-mono text-[11px] text-warning">
               Role `viewer` is read-only. Sign in as analyst to create incidents.
             </div>
           )}
           <label className="flex flex-col gap-1">
-            <span className="font-mono text-[10px] tracking-[0.12em] text-[#8FA0BF]">SCENARIO</span>
+            <span className="font-mono text-[10px] tracking-[0.12em] text-muted">SCENARIO</span>
             <select
               value={scenarioId}
               onChange={(e) => setScenarioId(e.target.value)}
               disabled={!canCreate}
-              className="bg-[#16223B] border border-[#22304D] rounded px-2 py-2 text-xs font-mono text-[#E6EDF7] outline-none"
+              className="bg-surface-2 border border-border rounded px-2 py-2 text-xs font-mono text-text outline-none"
             >
               {(scenarios.data || []).map((s) => (
                 <option key={s.id} value={s.id}>
@@ -106,39 +106,39 @@ export function IncidentsPage() {
             </select>
           </label>
           {scenarios.data && (
-            <div className="text-[11px] text-[#8FA0BF] leading-relaxed">
+            <div className="text-[11px] text-muted leading-relaxed">
               {scenarios.data.find((s) => s.id === scenarioId)?.description}
             </div>
           )}
           <div className="flex gap-2">
             <label className="flex-1 flex flex-col gap-1">
-              <span className="font-mono text-[10px] tracking-[0.12em] text-[#8FA0BF]">SEED</span>
+              <span className="font-mono text-[10px] tracking-[0.12em] text-muted">SEED</span>
               <input
                 type="number"
                 value={seed}
                 onChange={(e) => setSeed(Number(e.target.value))}
                 disabled={!canCreate}
-                className="bg-[#16223B] border border-[#22304D] rounded px-2 py-2 text-xs font-mono text-[#E6EDF7] outline-none"
+                className="bg-surface-2 border border-border rounded px-2 py-2 text-xs font-mono text-text outline-none"
               />
             </label>
             <label className="flex-1 flex flex-col gap-1">
-              <span className="font-mono text-[10px] tracking-[0.12em] text-[#8FA0BF]">MODE</span>
+              <span className="font-mono text-[10px] tracking-[0.12em] text-muted">MODE</span>
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value as Mode)}
                 disabled={!canCreate}
-                className="bg-[#16223B] border border-[#22304D] rounded px-2 py-2 text-xs font-mono text-[#E6EDF7] outline-none"
+                className="bg-surface-2 border border-border rounded px-2 py-2 text-xs font-mono text-text outline-none"
               >
                 <option value="ENFORCE">ENFORCE</option>
                 <option value="SHADOW">SHADOW</option>
               </select>
             </label>
           </div>
-          <div className="font-mono text-[10px] text-[#8FA0BF]">
-            Configuration: <span className="text-[#E6EDF7]">B3</span> (full SENTINEL-X agent)
+          <div className="font-mono text-[10px] text-muted">
+            Configuration: <span className="text-text">B3</span> (full SENTINEL-X agent)
           </div>
           {createError && (
-            <div className="font-mono text-[11px] text-[#EF4444] border border-[#EF4444]/40 bg-[#EF4444]/10 rounded px-2 py-1.5">
+            <div className="font-mono text-[11px] text-danger border border-danger/40 bg-danger/10 rounded px-2 py-1.5">
               {createError}
             </div>
           )}
@@ -148,11 +148,11 @@ export function IncidentsPage() {
               setCreateError('');
               create.mutate();
             }}
-            className="rounded bg-[#0E7C86] hover:bg-[#12929E] disabled:opacity-50 text-white font-mono text-xs font-semibold tracking-wider px-3 py-2"
+            className="rounded bg-primary hover:bg-primary-hover disabled:opacity-50 text-white font-mono text-xs font-semibold tracking-wider px-3 py-2"
           >
             {create.isPending ? 'CREATING…' : 'CREATE + RUN AGENT'}
           </button>
-          <div className="text-[11px] text-[#8FA0BF] leading-relaxed">
+          <div className="text-[11px] text-muted leading-relaxed">
             Creation runs the full OBSERVE→…→VERIFY loop synchronously. Same seed reproduces
             the same adversary evolution.
           </div>
