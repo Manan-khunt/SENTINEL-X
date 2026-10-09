@@ -155,6 +155,13 @@ def test_enforce_high_risk_waits_for_approval_then_denies(client, db):
     assert target.result == "DENIED" and target.approval_status == "denied"
     env_after = db.query(Incident).filter_by(id=inc.id).first().env_state_json
     assert "admin_root" not in (env_after.get("disabled_credentials", []) or [])
+    try:
+        decide_approval(db, target.id, True, "test-approver")
+        assert False, "a decided approval must not be reusable"
+    except Exception as exc:
+        from app.core.gateway import GatewayError
+
+        assert isinstance(exc, GatewayError)
 
 
 def test_protected_asset_requires_approval_in_every_mode(client, db):
@@ -176,6 +183,54 @@ def test_protected_asset_requires_approval_in_every_mode(client, db):
             idempotency_key=f"{inc.id}:protected-{mode}",
         )
         assert out["status"] == "AWAITING_APPROVAL", (mode, out)
+
+
+def test_approval_rechecks_kill_switch_before_execution(client, db):
+    from app.agent.orchestrator import create_incident, decide_approval
+    from app.core.gateway import execute
+    from app.core.system_state import set_system_status
+    from app.db.tables import Action, Incident
+
+    inc = create_incident(db, "scenario_4", 42, "ENFORCE", "B3", "test-approval-killswitch")
+    action = db.query(Action).filter_by(incident_id=inc.id, approval_status="pending").first()
+    if action is None:
+        state = db.query(Incident).filter_by(id=inc.id).first().env_state_json
+        result = execute(db, inc.id, dict(state), "disable_credential", "admin_root",
+                         "test high risk", "test", "ENFORCE", idempotency_key=f"{inc.id}:high")
+        action = db.query(Action).filter_by(id=result["action_id"]).first()
+    assert action is not None and action.result == "PENDING"
+    set_system_status(db, "HALTED", updated_by="test")
+    try:
+        out = decide_approval(db, action.id, True, "test-approver")
+        assert out["status"] == "blocked"
+        db.refresh(action)
+        assert action.result == "BLOCKED"
+        state = db.query(Incident).filter_by(id=inc.id).first().env_state_json
+        assert "admin_root" not in (state.get("disabled_credentials", []) or [])
+    finally:
+        set_system_status(db, "RUNNING", updated_by="test")
+
+
+def test_approved_high_risk_action_executes_through_gateway(client, db):
+    from app.agent.orchestrator import create_incident, decide_approval
+    from app.core.gateway import execute
+    from app.db.tables import Action, AuditLog, Incident
+
+    inc = create_incident(db, "scenario_4", 42, "ENFORCE", "B3", "test-approved-action")
+    action = db.query(Action).filter_by(incident_id=inc.id, approval_status="pending").first()
+    if action is None:
+        state = db.query(Incident).filter_by(id=inc.id).first().env_state_json
+        result = execute(db, inc.id, dict(state), "disable_credential", "admin_root",
+                         "test high risk", "test", "ENFORCE", idempotency_key=f"{inc.id}:high")
+        action = db.query(Action).filter_by(id=result["action_id"]).first()
+    assert action is not None
+    out = decide_approval(db, action.id, True, "test-approver")
+    assert out["status"] == "approved"
+    db.refresh(action)
+    assert action.result == "SUCCESS"
+    state = db.query(Incident).filter_by(id=inc.id).first().env_state_json
+    assert "admin_root" in (state.get("disabled_credentials", []) or [])
+    assert db.query(AuditLog).filter_by(incident_id=inc.id, event="action.executed").count() >= 1
 
 
 def test_shadow_approval_never_executes(client, db):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 from datetime import datetime, timezone
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.agent.fallback import fallback_plan, static_playbook_plan
@@ -16,7 +17,7 @@ from app.agent.planner import validate_plan
 from app.config import get_settings
 from app.core import events
 from app.core.audit import anchor_current_head, append_event
-from app.core.gateway import GatewayError
+from app.core.gateway import GatewayError, execute_approved_action
 from app.core.gateway import execute as gateway_execute
 from app.core.graph_engine import (
     find_active_paths,
@@ -30,7 +31,7 @@ from app.core.verifier import verify_containment
 from app.db.tables import Action, AgentStep, Approval, GraphSnapshot, Incident
 from app.db.tables import Plan as PlanRow
 from app.env.adversary import adversary_step
-from app.env.environment import apply_agent_effect, initial_state
+from app.env.environment import initial_state
 from app.llm.adapter import LLMAdapter
 from app.tools.respond import simulate_action
 
@@ -465,15 +466,23 @@ def decide_approval(
     if not ap or ap.status != "pending":
         raise GatewayError("no pending approval")
     inc = db.query(Incident).filter_by(id=a.incident_id).first()
+    if not inc:
+        raise GatewayError("incident not found")
+    claimed = db.execute(
+        update(Approval).where(Approval.id == ap.id, Approval.status == "pending")
+        .values(status="processing", decided_by=actor, decided_at=datetime.now(timezone.utc))
+    )
+    if claimed.rowcount != 1:
+        db.rollback()
+        raise GatewayError("approval already decided")
+    db.commit()
     if approve:
-        ap.status = "approved"
-        ap.decided_by = actor
-        ap.decided_at = datetime.now(timezone.utc)
-        a.approval_status = "approved"
-        if (inc.mode if inc else "") == "SHADOW":
+        if inc.mode == "SHADOW":
             # Recommend-only mode: record the human decision but never
             # execute environment changes, even after approval.
             a.result = "SHADOW_RECOMMEND"
+            ap.status = "approved"
+            a.approval_status = "approved"
             db.commit()
             append_event(
                 db,
@@ -485,24 +494,23 @@ def decide_approval(
             events.publish(a.incident_id, "action.approved", {"action": action_id})
             resume_after_approval(db, a.incident_id, actor)
             return {"status": "approved", "action": action_id}
-        # execute now through gateway effect directly (already risk/policy checked)
-        apply_agent_effect(inc.env_state_json, a.tool, a.target)
-        a.result = "SUCCESS"
+        ap.status = "approved"
+        a.approval_status = "approved"
         db.commit()
         append_event(db, a.incident_id, actor, "action.approved", {"action": action_id})
         events.publish(a.incident_id, "action.approved", {"action": action_id})
-        append_event(
-            db,
-            a.incident_id,
-            actor,
-            "action.executed",
-            {"action": action_id, "tool": a.tool, "after_approval": True},
-        )
-        events.publish(a.incident_id, "action.executed", {"action": action_id})
+        try:
+            execute_approved_action(db, a, inc, actor)
+        except GatewayError as exc:
+            ap.status = "blocked"
+            a.approval_status = "blocked"
+            a.result = "BLOCKED"
+            db.commit()
+            append_event(db, a.incident_id, actor, "action.blocked", {"action": action_id, "reason": str(exc)})
+            resume_after_approval(db, a.incident_id, actor)
+            return {"status": "blocked", "action": action_id, "reason": str(exc)}
     else:
         ap.status = "denied"
-        ap.decided_by = actor
-        ap.decided_at = datetime.now(timezone.utc)
         a.approval_status = "denied"
         a.result = "DENIED"
         db.commit()

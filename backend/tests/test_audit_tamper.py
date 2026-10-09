@@ -27,8 +27,11 @@ def _use_anchor_file(tmp_path, monkeypatch, every="2") -> None:
 
 
 @pytest.fixture(autouse=True)
-def _restore_settings():
+def _restore_settings(monkeypatch):
     yield
+    # Clear settings after restoring patched environment variables so the next
+    # isolated DB fixture cannot inherit this test's temporary anchor path.
+    monkeypatch.undo()
     _gs.cache_clear()
 
 

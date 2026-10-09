@@ -214,3 +214,36 @@ def execute(
         "risk": risk,
         "policy": policy,
     }
+
+
+def execute_approved_action(db: Session, action: Action, incident, actor: str) -> dict:
+    """Revalidate and execute a previously gated action after human approval."""
+    from app.core.system_state import get_system_mode, is_halted
+
+    if is_halted(db):
+        raise GatewayError("system halted by kill switch")
+    mode = get_system_mode(db) or incident.mode
+    if mode != "ENFORCE":
+        raise GatewayError("approved actions execute only in ENFORCE mode")
+    if not registry.tool_exists(action.tool) or not registry.is_write_tool(action.tool):
+        raise GatewayError("approved action is not a registered write tool")
+    state = incident.env_state_json
+    graph = build_graph(state)
+    if action.tool != "block_indicator" and action.target not in state.get("nodes", {}) and action.target not in graph.nodes:
+        raise GatewayError("approved action target is no longer present")
+    risk = score_action(state, action.tool, action.target)
+    policy = policy_check(risk["tier"], action.target, state, mode)
+    if risk["tier"] != action.risk_tier or not policy["allowed"] and not policy["approval_required"]:
+        raise GatewayError("current risk or policy no longer permits this action")
+    result = respond.apply_response_action(state, action.tool, action.target)
+    action.result = result.get("status", "SUCCESS")
+    action.risk_score = risk["score"]
+    action.risk_tier = risk["tier"]
+    action.risk_factors_json = risk["factors"]
+    db.commit()
+    append_event(db, action.incident_id, actor, "action.executed", {
+        "action": action.id, "tool": action.tool, "target": action.target,
+        "result": action.result, "after_approval": True,
+    })
+    events.publish(action.incident_id, "action.executed", {"action": action.id, "tool": action.tool, "target": action.target})
+    return {"action_id": action.id, "status": action.result, "risk": risk, "policy": policy}

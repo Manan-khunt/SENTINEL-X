@@ -31,8 +31,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await api.login(username, password);
     memoryToken = res.access_token;
     setToken(res.access_token);
-    const me = await api.me();
-    setUser(me);
+    try {
+      const me = await api.me();
+      setUser(me);
+    } catch (error) {
+      memoryToken = null;
+      setToken(null);
+      setUser(null);
+      throw error;
+    }
   }, []);
 
   const logout = useCallback(() => {

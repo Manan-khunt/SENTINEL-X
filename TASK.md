@@ -1,78 +1,39 @@
-# TASK: Current Working Memory
-
-> **RESYNC 2026-10-09:** Phase 0 below is STALE (written before implementation).
-> Actual state: full backend (FastAPI + agent loop + gateway + audit + SSE +
-> benchmark + 60 pytest tests green), full frontend (7 pages + Cytoscape graph +
-> SSE store + vitest 8/8 green), Docker configs, live E2E 18/18 PASS on
-> 2026-10-09. Do not treat the unticked Phase 0 boxes as current progress —
-> see the session completion report for verified status.
-
-> **Disposable file.** Overwrite it at the start of each session or phase. It holds only what the AI needs *right now*. Anything permanent belongs in `RULES.md` (decisions) or `IMPLEMENTATION_PLAN.md` (progress).
-
----
+﻿# TASK: Current Working Memory
 
 ## Current phase
-**Phase 0: Repo, tooling, skeleton** (see `IMPLEMENTATION_PLAN.md`)
+**Full-stack repair and verification**
 
-## Context files attached this session
-`README.md` · `RULES.md` · `IMPLEMENTATION_PLAN.md` · `TASK.md` · `TRD.md` (§1, §3, §7) · `DESIGN.md` (§2.4 only)
+## Goal
+Keep the SENTINEL-X tactical frontend aligned with actual backend behavior and preserve the documented security boundaries.
 
-## Goal for this session
-A runnable empty project: FastAPI health endpoint, Vite + React + Tailwind shell with design tokens, Docker Compose, lint/test tooling.
+## Completed this session
+- Checkpointed the project before full-stack verification.
+- Routed approved ENFORCE actions through a gateway function that rechecks the kill switch, system mode, tool registry, target, current risk, and policy.
+- Added an atomic pending-to-processing approval claim to prevent concurrent approve/deny decisions.
+- Added tests for approved execution, kill-switch blocking, denial without execution, and stale decision rejection.
+- Fixed the audit test fixture to clear cached configuration after restoring its temporary anchor path.
+- Added a dedicated latest-action lifecycle panel with backend-derived state.
+- Denied the real synthetic `INC-1045` request as approver; backend returned DENIED and audit verification remained INTACT. Replanning produced another pending request.
 
-## Do only this (checklist)
-- [ ] Create repo layout from `TRD.md` §3 (empty modules with docstrings)
-- [ ] Backend: FastAPI app, `GET /api/health`, `pydantic-settings`, `.env.example`
-- [ ] Frontend: Vite + React + TypeScript + Tailwind with tokens from `DESIGN.md` §2.4
-- [ ] Ruff/Black/ESLint/Prettier configs; pytest and vitest run
-- [ ] `docker-compose.yml` for backend `:8000` and frontend `:5173`
-- [ ] `.gitignore`
+## Verification
+- Backend full suite: **80 passed**.
+- Focused approval tests: **3 passed**.
+- Audit tamper tests: **5 passed**.
+- Frontend unit tests: **8 passed**.
+- Frontend TypeScript production build: passed; bundle-size warning remains (786.57 kB JS chunk).
+- Frontend lint: exit 0; 3 existing React Fast Refresh warnings.
+- Browser console: no errors observed.
 
-## Do NOT do (this session)
-- Any schema, DB table, tool, graph or agent code (Phase 1 and later)
-- Any dependency not listed in `TRD.md` §1
-- Any UI beyond a placeholder page
+## Remaining verification
+- Adaptive scenario `INC-1044` was verified in the previous repair pass; this session did not repeat its complete lifecycle from a newly created incident.
+- The denied `INC-1045` incident remains awaiting a second high-risk approval after the agent replanned. No decision was made on that follow-up request.
 
-## Exit checks (all must pass before stopping)
-- [ ] `docker compose up --build` starts both services
-- [ ] `GET /api/health` returns `{"status":"ok"}`
-- [ ] Frontend placeholder renders using Tailwind tokens (`bg-bg`, `text-text`, `bg-primary`)
-- [ ] `pytest` and `npm test` execute without errors
-
-## Files expected to change
-`backend/app/main.py`, `backend/app/config.py`, `backend/pyproject.toml` (or `requirements.txt`), `frontend/*` (Vite scaffold, `tailwind.config.js`), `docker-compose.yml`, `.env.example`, `.gitignore`
-
----
-
-## Session log (AI fills in)
-
-| Time | What was done | Result |
+## Session log
+| Date | Work | Result |
 |---|---|---|
-| 2026-10-09 | Final repair pass: Docker/prod config, JWT default rejection, SHADOW gateway fix, full benchmark, Docker + live E2E verification | Backend 78/78, frontend build/lint/8 tests green, bench 800 runs (6/7 thresholds), compose + live E2E green; TTC ratio 2.0 honest FAIL; Vercel NOT VERIFIED |
+| 2026-10-09 | Full-stack approval-path repair, action lifecycle UI, audit test isolation fix, live denial verification | Backend 80/80; frontend 8/8, build passes, lint exits 0 with warnings; live denial recorded and audit intact |
 
-## Open questions / blockers (AI fills in; human answers)
-
-- 
-
-## Decisions made this session (copy into `RULES.md` §7 afterwards)
-
-- 
-
-## Handoff note for the next session (AI writes at the end)
-
-- State of the repo:
-- Last command run and result:
-- Next phase to start: **Phase 1: Schemas and contracts**
-
----
-
-## Template for starting the next phase (copy, fill, replace the top of this file)
-
-```text
-Current phase: Phase N: <name>
-Context files: README.md, RULES.md, IMPLEMENTATION_PLAN.md, TASK.md, <extra files per plan>
-Goal: <one sentence>
-Do only: <checklist copied from the plan>
-Do NOT do: <next phase items, new dependencies, refactors>
-Exit checks: <copied from the plan>
-```
+## Handoff
+- Repo changes are uncommitted; pre-session checkpoint: `SENTINEL-X_pre_fullstack_verification.zip`.
+- Frontend is running at `http://127.0.0.1:5174/`; backend at `http://127.0.0.1:8000`.
+- Next: decide how repeated denied high-risk proposals should affect the incident loop; the current implementation replans and requests approval again.

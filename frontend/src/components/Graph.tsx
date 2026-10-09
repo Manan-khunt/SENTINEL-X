@@ -1,7 +1,7 @@
 // Attack graph rendered from the backend snapshot only.
 // Diff overlay (new pivot nodes/edges) comes from the latest graph.diff
 // audit event payload — never invented on the client.
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import cytoscape from 'cytoscape';
 import type { GraphDiffPayload, GraphSnapshot } from '../types';
 import { TOK, TYPE_COLOR } from '../lib/tokens';
@@ -33,14 +33,14 @@ export function AttackGraph({
   const cyRef = useRef<cytoscape.Core | null>(null);
   const prevVersion = useRef<number>(snapshot.version);
 
-  const diffNodes = new Set<string>([
+  const diffNodes = useMemo(() => new Set<string>([
     ...(diff?.new_nodes || []),
     ...(diff?.new_active_paths || []).flat(),
-  ]);
-  const diffEdges = new Set<string>([
+  ]), [diff]);
+  const diffEdges = useMemo(() => new Set<string>([
     ...(diff?.changed_edges || []).map(edgeKey),
     ...flattenEdges(diff?.new_active_paths || []),
-  ]);
+  ]), [diff]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -161,23 +161,19 @@ export function AttackGraph({
       ],
     });
     cyRef.current = cy;
-    if (!reducedMotion()) {
-      // Settle the new layout, then pulse newly discovered edges once
-      // (DESIGN.md §7: one pulse, never perpetual).
-      cy.fit(undefined, 24);
-      if (versionChanged && diffEdges.size > 0) {
-        const fresh = cy.edges().filter((e) => diffEdges.has(edgeKey(e.data())));
-        fresh.style({ opacity: 0.25 });
-        fresh.animate({ style: { opacity: 1 } }, { duration: 600 });
-      }
+    // Fit the graph on every rebuild, including when reduced motion is enabled.
+    // Reduced-motion preference disables animation, not initial layout.
+    cy.fit(undefined, 24);
+    if (!reducedMotion() && versionChanged && diffEdges.size > 0) {
+      const fresh = cy.edges().filter((e) => diffEdges.has(edgeKey(e.data())));
+      fresh.style({ opacity: 0.25 });
+      fresh.animate({ style: { opacity: 1 } }, { duration: 600 });
     }
     return () => {
       cy.destroy();
       cyRef.current = null;
     };
-    // Rebuild when snapshot version or diff changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [snapshot.version, JSON.stringify(snapshot.nodes), JSON.stringify(snapshot.edges), JSON.stringify(diff), foothold]);
+  }, [snapshot, activeNodes, diffNodes, diffEdges, foothold]);
 
   return (
     <div className="relative w-full" style={{ height }}>

@@ -29,7 +29,7 @@ export function LoginPage() {
     <div className="h-screen w-screen flex items-center justify-center bg-bg">
       <form
         onSubmit={submit}
-        className="soc-panel rounded p-6 w-[340px] flex flex-col gap-3"
+        className="soc-panel rounded p-6 w-[340px] max-w-[calc(100vw-2rem)] flex flex-col gap-3"
       >
         <div>
           <div className="font-mono font-bold text-lg text-text tracking-wider">
