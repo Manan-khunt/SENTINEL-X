@@ -1,0 +1,9 @@
+# Slim serverless requirements for the Vercel Python runtime.
+# (No pytest/ruff/black/httpx — build/test tooling stays local.)
+fastapi==0.104.1
+pydantic==2.5.0
+pydantic-settings==2.1.0
+SQLAlchemy==2.0.23
+networkx==3.2.1
+PyJWT==2.8.0
+bcrypt==4.1.2
